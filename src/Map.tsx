@@ -14,6 +14,7 @@ import {
   TILE_SOURCES,
 } from './domain/types'
 import InfoPanel from './InfoPanel'
+import { pmtilesUrl } from './lib/paths'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
 // Wide enough for all of NZ including Chathams when zoomed out
@@ -90,15 +91,15 @@ function MapView() {
           },
           rc: {
             type: 'vector',
-            url: `pmtiles://${window.location.origin}/tiles/rc.pmtiles`,
+            url: `pmtiles://${pmtilesUrl('tiles/rc.pmtiles')}`,
           },
           ta: {
             type: 'vector',
-            url: `pmtiles://${window.location.origin}/tiles/ta.pmtiles`,
+            url: `pmtiles://${pmtilesUrl('tiles/ta.pmtiles')}`,
           },
           sa2: {
             type: 'vector',
-            url: `pmtiles://${window.location.origin}/tiles/sa2.pmtiles`,
+            url: `pmtiles://${pmtilesUrl('tiles/sa2.pmtiles')}`,
           },
         },
         layers: [

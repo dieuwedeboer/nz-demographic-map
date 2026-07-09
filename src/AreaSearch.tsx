@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeName } from './domain/geo'
 import type { GeographyTier } from './domain/types'
+import { assetUrl } from './lib/paths'
 
 export interface SearchHit {
   name: string
@@ -58,7 +59,7 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/data/prepared/search-index.json')
+    fetch(assetUrl('data/prepared/search-index.json'))
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status))
         return r.json()

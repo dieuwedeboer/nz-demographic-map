@@ -1,5 +1,6 @@
 import { ageGroupSlug, normalizeName } from '../domain/geo'
 import type { GeographyTier, RegionEntry } from '../domain/types'
+import { assetUrl } from '../lib/paths'
 
 export interface DataManifest {
   years: string[]
@@ -46,7 +47,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 export async function loadManifest(): Promise<DataManifest> {
-  return fetchJson<DataManifest>('/data/prepared/manifest.json')
+  return fetchJson<DataManifest>(assetUrl('data/prepared/manifest.json'))
 }
 
 export async function loadMetrics(
@@ -55,20 +56,24 @@ export async function loadMetrics(
   ageGroup: string,
 ): Promise<Record<string, number>> {
   const slug = ageGroupSlug(ageGroup)
-  return fetchJson<Record<string, number>>(`/data/prepared/metrics/${tier}/${year}-${slug}.json`)
+  return fetchJson<Record<string, number>>(
+    assetUrl(`data/prepared/metrics/${tier}/${year}-${slug}.json`),
+  )
 }
 
 export async function loadNameIndex(): Promise<Map<string, NameIndexEntry>> {
-  const obj = await fetchJson<Record<string, NameIndexEntry>>('/data/prepared/name-index.json')
+  const obj = await fetchJson<Record<string, NameIndexEntry>>(
+    assetUrl('data/prepared/name-index.json'),
+  )
   return new Map(Object.entries(obj))
 }
 
 export async function loadAreaBySlug(slug: string): Promise<AreaDetail> {
-  return fetchJson<AreaDetail>(`/data/prepared/areas/${slug}.json`)
+  return fetchJson<AreaDetail>(assetUrl(`data/prepared/areas/${slug}.json`))
 }
 
 export async function loadNational(): Promise<AreaDetail> {
-  return fetchJson<AreaDetail>('/data/prepared/national.json')
+  return fetchJson<AreaDetail>(assetUrl('data/prepared/national.json'))
 }
 
 export function resolveIndexEntry(

@@ -9,6 +9,11 @@
 - `npm run knip` - Find unused exports/deps
 - `npm run data:prepare` - Split census JSON into tiered/metrics caches
 
+## Deploy
+- GitHub Pages via `.github/workflows/deploy.yml` on push to `master`
+- Build sets `GITHUB_PAGES=true` so Vite `base` is `/nz-demographic-map/`
+- Use `assetUrl()` / `pmtilesUrl()` from `src/lib/paths.ts` for static assets
+
 ## Test Commands
 - `npm test` - Vitest (jsdom)
 - `npm run test:watch` - Vitest watch mode

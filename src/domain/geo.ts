@@ -62,16 +62,24 @@ export function europeanFillColor(percentage?: number): string {
     return '#888'
   }
 
-  if (percentage > 70) {
-    const t = Math.min((percentage - 70) / 30, 1)
-    return `rgb(${Math.round(30 + t * 100)}, ${Math.round(120 + t * 120)}, ${Math.round(220 + t * 30)})`
-  }
+  // 100% = dark blue, 75% = medium blue, 50% = light blue
   if (percentage >= 50) {
-    const t = (percentage - 50) / 20
-    return `rgb(${Math.round(30)}, ${Math.round(100 + t * 20)}, ${Math.round(200 + t * 20)})`
+    const t = (percentage - 50) / 50
+    if (t < 0.5) {
+      const u = t / 0.5
+      return `rgb(${Math.round(120 + u * -90)}, ${Math.round(180 + u * -80)}, ${Math.round(240 + u * -40)})`
+    }
+    const u = (t - 0.5) / 0.5
+    return `rgb(${Math.round(30 + u * -20)}, ${Math.round(100 + u * -70)}, ${Math.round(200 + u * -80)})`
   }
-  const t = percentage / 50
-  return `rgb(${Math.round(180 * (1 - t) + 30 * t)}, ${Math.round(120 * (1 - t) + 40 * t)}, ${Math.round(80 * (1 - t) + 30 * t)})`
+
+  // 50% = light blue, 25% = orange, 0% = dark brown
+  if (percentage >= 25) {
+    const t = (percentage - 25) / 25
+    return `rgb(${Math.round(200 + t * -80)}, ${Math.round(110 + t * 70)}, ${Math.round(30 + t * 210)})`
+  }
+  const t = percentage / 25
+  return `rgb(${Math.round(80 + t * 120)}, ${Math.round(30 + t * 80)}, ${Math.round(10 + t * 20)})`
 }
 
 export function getValue(data: EthnicityCounts | undefined, key: string): number {

@@ -73,13 +73,13 @@ export function europeanFillColor(percentage?: number): string {
     return `rgb(${Math.round(30 + u * -20)}, ${Math.round(100 + u * -70)}, ${Math.round(200 + u * -80)})`
   }
 
-  // 50% = light blue, 25% = orange, 0% = dark brown
+  // 50% = light blue, 25% = warm orange, 0% = amber/tan
   if (percentage >= 25) {
     const t = (percentage - 25) / 25
-    return `rgb(${Math.round(200 + t * -80)}, ${Math.round(110 + t * 70)}, ${Math.round(30 + t * 210)})`
+    return `rgb(${Math.round(245 + t * -125)}, ${Math.round(140 + t * 40)}, ${Math.round(80 + t * 160)})`
   }
   const t = percentage / 25
-  return `rgb(${Math.round(80 + t * 120)}, ${Math.round(30 + t * 80)}, ${Math.round(10 + t * 20)})`
+  return `rgb(${Math.round(200 + t * 45)}, ${Math.round(120 + t * 20)}, ${Math.round(70 + t * 10)})`
 }
 
 export function getValue(data: EthnicityCounts | undefined, key: string): number {

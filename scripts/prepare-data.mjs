@@ -71,9 +71,15 @@ async function writeJson(path, data) {
   await writeFile(path, JSON.stringify(data))
 }
 
-/** Map names as they appear on the map (GeoJSON) → census keys when different. */
+/**
+ * Map names as they appear on the map (GeoJSON) → census keys when different.
+ * The GeoJSON layers name Auckland simply "Auckland" for both RC and TA, but
+ * Stats NZ stores the complete data under the "Auckland Region" key (geoid 02).
+ * The bare "Auckland" key (geoid 076, TA) has incomplete ethnicity breakdowns,
+ * so we alias display name "Auckland" → census key "Auckland Region".
+ */
 const CENSUS_ALIASES = {
-  'Auckland Region': 'Auckland',
+  Auckland: 'Auckland Region',
 }
 
 function resolveCensusName(displayName, nameIndex) {
@@ -159,8 +165,11 @@ async function main() {
     loadJson(join(assets, 'statistical-area-2.json')),
   ])
 
-  // Wipe previous prepared output (removes multi-MB tier bundles)
-  await rm(outRoot, { recursive: true, force: true })
+  // Wipe previous prepared output subdirectories (keeps prepared/ root intact
+  // so Vite's sirv cache doesn't lose track of root-level files)
+  for (const sub of ['areas', 'metrics']) {
+    await rm(join(outRoot, sub), { recursive: true, force: true })
+  }
   await mkdir(outRoot, { recursive: true })
 
   const singleIndex = buildNameIndex(single)

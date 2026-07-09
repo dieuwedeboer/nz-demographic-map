@@ -15,6 +15,7 @@ import {
 } from './domain/types'
 import InfoPanel from './InfoPanel'
 import { pmtilesUrl } from './lib/paths'
+import MapLegend from './MapLegend'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
 // Wide enough for all of NZ including Chathams when zoomed out
@@ -83,12 +84,6 @@ function MapView() {
       style: {
         version: 8,
         sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-          },
           rc: {
             type: 'vector',
             url: `pmtiles://${pmtilesUrl('tiles/rc.pmtiles')}`,
@@ -103,7 +98,11 @@ function MapView() {
           },
         },
         layers: [
-          { id: 'osm', type: 'raster', source: 'osm' },
+          {
+            id: 'background',
+            type: 'background',
+            paint: { 'background-color': '#e8e8e8' },
+          },
           {
             id: 'rc-fill',
             type: 'fill',
@@ -111,7 +110,7 @@ function MapView() {
             'source-layer': TILE_SOURCES.rc.layer,
             paint: {
               'fill-color': '#888',
-              'fill-opacity': 0.75,
+              'fill-opacity': 0.88,
             },
           },
           {
@@ -128,7 +127,7 @@ function MapView() {
             'source-layer': TILE_SOURCES.ta.layer,
             paint: {
               'fill-color': '#888',
-              'fill-opacity': 0.75,
+              'fill-opacity': 0.88,
             },
             layout: { visibility: 'none' },
           },
@@ -147,7 +146,7 @@ function MapView() {
             'source-layer': TILE_SOURCES.sa2.layer,
             paint: {
               'fill-color': '#888',
-              'fill-opacity': 0.75,
+              'fill-opacity': 0.88,
             },
             layout: { visibility: 'none' },
           },
@@ -339,6 +338,7 @@ function MapView() {
         disabled={loading}
       />
       <InfoPanel />
+      <MapLegend />
       {loading && <div className="map-overlay-message">Loading map...</div>}
       {detailLoading && !loading && <div className="map-overlay-detail">Loading area...</div>}
       {error && <div className="map-overlay-error">Error: {error}</div>}

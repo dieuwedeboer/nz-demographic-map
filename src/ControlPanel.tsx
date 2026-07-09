@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTheme } from './contexts/ThemeContext'
 import type { AgeGroup } from './domain/types'
 
@@ -33,84 +34,100 @@ function ControlPanel({
   disabled = false,
 }: ControlPanelProps) {
   const { theme, toggleTheme } = useTheme()
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
-    <div className="control-panel">
-      <div className="control-section-title">Census</div>
-      {availableYears.length > 0 && (
-        <div className="selector-container">
-          <select
-            id="year-selector"
-            value={selectedYear}
-            onChange={(e) => onYearChange(e.target.value)}
-            disabled={disabled}
-          >
-            {availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="control-section-title">Age</div>
-      <div className="selector-container">
-        <select
-          id="age-group-selector"
-          value={selectedAgeGroup}
-          onChange={(e) => onAgeGroupChange(e.target.value as AgeGroup)}
-          disabled={disabled}
-        >
-          {availableAgeGroups.map((ag) => (
-            <option key={ag} value={ag}>
-              {ag === 'Total - age' ? 'All' : ag}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="control-section-title">Layers</div>
-      <div className="selector-container">
-        <label>
-          <input
-            type="checkbox"
-            checked={showRegionalCouncils}
-            onChange={(e) => onShowRegionalCouncilsChange(e.target.checked)}
-            disabled={disabled}
-          />{' '}
-          Regional Councils
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={showTerritorialAuthorities}
-            onChange={(e) => onShowTerritorialAuthoritiesChange(e.target.checked)}
-            disabled={disabled}
-          />{' '}
-          Territorial Authorities
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={showSA2}
-            onChange={(e) => onShowSA2Change(e.target.checked)}
-            disabled={disabled}
-          />{' '}
-          Statistical Areas
-        </label>
-      </div>
-
-      <div className="selector-container theme-row">
+    <div className={`control-panel ${collapsed ? 'collapsed' : ''}`}>
+      <div className="panel-header">
+        <span className="panel-header-label">Controls</span>
         <button
           type="button"
-          className="theme-toggle"
-          onClick={toggleTheme}
-          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          className="panel-toggle"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? 'Expand controls' : 'Collapse controls'}
         >
-          {theme === 'light' ? 'Dark' : 'Light'}
+          {collapsed ? '▶' : '▼'}
         </button>
       </div>
+      {!collapsed && (
+        <>
+          <div className="control-section-title">Census</div>
+          {availableYears.length > 0 && (
+            <div className="selector-container">
+              <select
+                id="year-selector"
+                value={selectedYear}
+                onChange={(e) => onYearChange(e.target.value)}
+                disabled={disabled}
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="control-section-title">Age</div>
+          <div className="selector-container">
+            <select
+              id="age-group-selector"
+              value={selectedAgeGroup}
+              onChange={(e) => onAgeGroupChange(e.target.value as AgeGroup)}
+              disabled={disabled}
+            >
+              {availableAgeGroups.map((ag) => (
+                <option key={ag} value={ag}>
+                  {ag === 'Total - age' ? 'All' : ag}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="control-section-title">Layers</div>
+          <div className="selector-container">
+            <label>
+              <input
+                type="checkbox"
+                checked={showRegionalCouncils}
+                onChange={(e) => onShowRegionalCouncilsChange(e.target.checked)}
+                disabled={disabled}
+              />{' '}
+              Regional Councils
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showTerritorialAuthorities}
+                onChange={(e) => onShowTerritorialAuthoritiesChange(e.target.checked)}
+                disabled={disabled}
+              />{' '}
+              Territorial Authorities
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showSA2}
+                onChange={(e) => onShowSA2Change(e.target.checked)}
+                disabled={disabled}
+              />{' '}
+              Statistical Areas
+            </label>
+          </div>
+
+          <div className="selector-container theme-row">
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={toggleTheme}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            >
+              {theme === 'light' ? 'Dark' : 'Light'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

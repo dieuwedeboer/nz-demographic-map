@@ -507,3 +507,87 @@ body {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ── Shared panel header (collapse toggle) ────────────────────── */
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.panel-header-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--control-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-toggle {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--control-text);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.panel-toggle:hover {
+  background: var(--button-hover);
+}
+
+/* When collapsed, trim padding so only the header bar shows */
+
+.control-panel.collapsed,
+.info-panel.collapsed,
+.map-legend.collapsed {
+  padding-bottom: 10px;
+}
+
+.info-panel.collapsed {
+  max-height: none;
+  overflow: visible;
+}
+
+/* ── Mobile responsive ────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .area-search {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+
+  .info-panel {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-height: 50vh;
+  }
+
+  .control-panel {
+    top: 60px;
+    bottom: auto;
+    right: 10px;
+    left: 10px;
+    min-width: 0;
+  }
+
+  .map-legend {
+    bottom: auto;
+    top: 200px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+}

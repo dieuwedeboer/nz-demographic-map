@@ -134,6 +134,7 @@ function InfoPanel() {
   const { selectedArea, selectedYear, selectedAgeGroup, selectedDetail, detailLoading } = useData()
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState(false)
 
   const toggleExpand = (name: string) => {
     setExpandedCategories((prev) => {
@@ -154,17 +155,30 @@ function InfoPanel() {
 
   if (!data || !selectedYearAgeGroupData || typeof total !== 'number') {
     return (
-      <div className={`info-panel ${isDark ? 'dark' : 'light'}`}>
-        <div className="info-panel-content">
-          <h4>{selectedArea}</h4>
-          <p>
-            {detailLoading || !data
-              ? 'Loading...'
-              : !selectedYearAgeGroupData
-                ? `No data for ${selectedYear}`
-                : 'No ethnicity data for this area'}
-          </p>
+      <div className={`info-panel ${isDark ? 'dark' : 'light'} ${collapsed ? 'collapsed' : ''}`}>
+        <div className="panel-header">
+          <span className="panel-header-label">{selectedArea}</span>
+          <button
+            type="button"
+            className="panel-toggle"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-label={collapsed ? 'Expand info' : 'Collapse info'}
+          >
+            {collapsed ? '▶' : '▼'}
+          </button>
         </div>
+        {!collapsed && (
+          <div className="info-panel-content">
+            <h4>{selectedArea}</h4>
+            <p>
+              {detailLoading || !data
+                ? 'Loading...'
+                : !selectedYearAgeGroupData
+                  ? `No data for ${selectedYear}`
+                  : 'No ethnicity data for this area'}
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -181,68 +195,81 @@ function InfoPanel() {
   const ageLabel = selectedAgeGroup === 'Total - age' ? 'All ages' : selectedAgeGroup
 
   return (
-    <div className={`info-panel ${isDark ? 'dark' : 'light'}`}>
-      <div className="info-panel-content">
-        <h4>{selectedArea}</h4>
-        <p>
-          {selectedYear} · {ageLabel} · single/combination responses
-        </p>
-
-        <EthnicityPie items={items} isDark={isDark} />
-
-        {selectedAgeGroup === 'Total - age' && (
-          <AgeBreakdown yearData={yearAllAges} isDark={isDark} />
-        )}
-
-        {items.map((item) => (
-          <div key={item.name}>
-            <div
-              className={`info-row depth-0 ${!item.isExpandable ? 'no-expand' : ''}`}
-              onClick={() => item.isExpandable && toggleExpand(item.name)}
-            >
-              <span className="info-label">
-                {item.isExpandable && (
-                  <span className="expand-icon">
-                    {expandedCategories.has(item.name) ? '▼' : '▶'}
-                  </span>
-                )}
-                <span>{item.name}</span>
-              </span>
-              <span className="info-value">{item.value.toLocaleString()}</span>
-              <span className="info-pct">({item.percentage}%)</span>
-              <span className={`info-change ${item.changeColorClass}`} title={item.changeTooltip}>
-                {item.changeIcon}
-              </span>
-            </div>
-            {item.isExpandable &&
-              expandedCategories.has(item.name) &&
-              (item.children ?? [])
-                .map((childName) => ({
-                  name: childName,
-                  data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
-                }))
-                .sort((a, b) => b.data - a.data)
-                .map((child) => {
-                  const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'
-                  return (
-                    <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
-                      <span className="info-label child">
-                        <span className="expand-icon-placeholder" />
-                        <span>{child.name}</span>
-                      </span>
-                      <span className="info-value">{child.data.toLocaleString()}</span>
-                      <span className="info-pct">({childPct}%)</span>
-                    </div>
-                  )
-                })}
-          </div>
-        ))}
-
-        <div className="info-total">
-          <span>Total stated:</span>
-          <span>{total.toLocaleString()}</span>
-        </div>
+    <div className={`info-panel ${isDark ? 'dark' : 'light'} ${collapsed ? 'collapsed' : ''}`}>
+      <div className="panel-header">
+        <span className="panel-header-label">{selectedArea}</span>
+        <button
+          type="button"
+          className="panel-toggle"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? 'Expand info' : 'Collapse info'}
+        >
+          {collapsed ? '▶' : '▼'}
+        </button>
       </div>
+      {!collapsed && (
+        <div className="info-panel-content">
+          <h4>{selectedArea}</h4>
+          <p>
+            {selectedYear} · {ageLabel} · single/combination responses
+          </p>
+
+          <EthnicityPie items={items} isDark={isDark} />
+
+          {selectedAgeGroup === 'Total - age' && (
+            <AgeBreakdown yearData={yearAllAges} isDark={isDark} />
+          )}
+
+          {items.map((item) => (
+            <div key={item.name}>
+              <div
+                className={`info-row depth-0 ${!item.isExpandable ? 'no-expand' : ''}`}
+                onClick={() => item.isExpandable && toggleExpand(item.name)}
+              >
+                <span className="info-label">
+                  {item.isExpandable && (
+                    <span className="expand-icon">
+                      {expandedCategories.has(item.name) ? '▼' : '▶'}
+                    </span>
+                  )}
+                  <span>{item.name}</span>
+                </span>
+                <span className="info-value">{item.value.toLocaleString()}</span>
+                <span className="info-pct">({item.percentage}%)</span>
+                <span className={`info-change ${item.changeColorClass}`} title={item.changeTooltip}>
+                  {item.changeIcon}
+                </span>
+              </div>
+              {item.isExpandable &&
+                expandedCategories.has(item.name) &&
+                (item.children ?? [])
+                  .map((childName) => ({
+                    name: childName,
+                    data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
+                  }))
+                  .sort((a, b) => b.data - a.data)
+                  .map((child) => {
+                    const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'
+                    return (
+                      <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
+                        <span className="info-label child">
+                          <span className="expand-icon-placeholder" />
+                          <span>{child.name}</span>
+                        </span>
+                        <span className="info-value">{child.data.toLocaleString()}</span>
+                        <span className="info-pct">({childPct}%)</span>
+                      </div>
+                    )
+                  })}
+            </div>
+          ))}
+
+          <div className="info-total">
+            <span>Total stated:</span>
+            <span>{total.toLocaleString()}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,0 +1,34 @@
+# Dependencies & build
+node_modules
+dist
+coverage
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Intermediate tile build products
+*.mbtiles
+src/assets/*.pmtiles
+
+# Raw Stats NZ downloads (regenerate with data:fetch* + data:prepare)
+public/data/statsnz_census_data.json
+public/data/statsnz_census_data_level3.json
+public/data/statsnz_structure_*.json
+public/data/statsnz_dimensions*.json
+public/data/statistical-area-2.json
+public/data/geographic-hierarchy.json
+public/data/ethnicity_hierarchy.json
+
+# Source geometry (large; keep local for data:prepare / re-tiling only)
+src/assets/**
+
+# OS / editor
+.DS_Store
+*.swp
+.idea
+.vscode

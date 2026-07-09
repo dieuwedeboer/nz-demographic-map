@@ -1,0 +1,253 @@
+import type { ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AGE_GROUPS,
+  type AgeGroup,
+  type GeographyTier,
+  NATIONAL_KEY,
+  type RegionData,
+  type UnifiedData,
+} from '../domain/types'
+import {
+  type AreaDetail,
+  type DataManifest,
+  loadAreaBySlug,
+  loadManifest,
+  loadMetrics,
+  loadNameIndex,
+  loadNational,
+  type NameIndexEntry,
+  resolveIndexEntry,
+} from '../services/dataLoader'
+
+interface DataContextType {
+  selectedArea: string
+  setSelectedArea: (area: string) => void
+  selectedYear: string
+  setSelectedYear: (year: string) => void
+  selectedAgeGroup: AgeGroup
+  setSelectedAgeGroup: (age: AgeGroup) => void
+  availableYears: string[]
+  availableAgeGroups: AgeGroup[]
+  metrics: Record<string, number>
+  nameIndex: Map<string, NameIndexEntry>
+  loading: boolean
+  detailLoading: boolean
+  error: string | null
+  ensureMetrics: (tiers: GeographyTier[]) => Promise<void>
+  nationalKey: string
+  manifest: DataManifest | null
+  selectedDetail: AreaDetail | null
+  regionData: RegionData
+  unifiedData: UnifiedData
+}
+
+const DataContext = createContext<DataContextType | undefined>(undefined)
+
+function metricsKey(tier: GeographyTier, year: string, age: string) {
+  return `${tier}|${year}|${age}`
+}
+
+export function useData() {
+  const context = useContext(DataContext)
+  if (!context) throw new Error('useData must be used within a DataProvider')
+  return context
+}
+
+export function DataProvider({ children }: { children: ReactNode }) {
+  const [metricsByKey, setMetricsByKey] = useState<Record<string, Record<string, number>>>({})
+  const metricsLoadedRef = useRef<Set<string>>(new Set())
+  const areaCacheRef = useRef<Map<string, AreaDetail>>(new Map())
+
+  const [nameIndex, setNameIndex] = useState<Map<string, NameIndexEntry>>(new Map())
+  const [manifest, setManifest] = useState<DataManifest | null>(null)
+  const [selectedArea, setSelectedArea] = useState(NATIONAL_KEY)
+  const [selectedYear, setSelectedYear] = useState('2023')
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>('Total - age')
+  const [selectedDetail, setSelectedDetail] = useState<AreaDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [activeMetricTiers, setActiveMetricTiers] = useState<GeographyTier[]>(['rc'])
+
+  const ensureMetrics = useCallback(
+    async (tiers: GeographyTier[]) => {
+      setActiveMetricTiers(tiers)
+      if (!selectedYear) return
+
+      const missing = tiers.filter(
+        (tier) => !metricsLoadedRef.current.has(metricsKey(tier, selectedYear, selectedAgeGroup)),
+      )
+      if (missing.length === 0) return
+
+      const results = await Promise.all(
+        missing.map(async (tier) => {
+          const data = await loadMetrics(tier, selectedYear, selectedAgeGroup)
+          return { tier, data }
+        }),
+      )
+
+      for (const r of results) {
+        metricsLoadedRef.current.add(metricsKey(r.tier, selectedYear, selectedAgeGroup))
+      }
+
+      setMetricsByKey((prev) => {
+        const next = { ...prev }
+        for (const r of results) {
+          next[metricsKey(r.tier, selectedYear, selectedAgeGroup)] = r.data
+        }
+        return next
+      })
+    },
+    [selectedYear, selectedAgeGroup],
+  )
+
+  // Bootstrap: manifest + name index + national detail + RC metrics
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const [man, index, national] = await Promise.all([
+          loadManifest(),
+          loadNameIndex(),
+          loadNational(),
+        ])
+        if (cancelled) return
+        setManifest(man)
+        setNameIndex(index)
+        areaCacheRef.current.set(national.name, national)
+        setSelectedDetail(national)
+        setSelectedArea(man.nationalKey || NATIONAL_KEY)
+        if (man.years.length > 0) {
+          setSelectedYear(man.years[man.years.length - 1])
+        }
+        const year = man.years[man.years.length - 1] || '2023'
+        const rcMetrics = await loadMetrics('rc', year, 'Total - age')
+        if (cancelled) return
+        metricsLoadedRef.current.add(metricsKey('rc', year, 'Total - age'))
+        setMetricsByKey({ [metricsKey('rc', year, 'Total - age')]: rcMetrics })
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load data')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Reload metrics when year/age changes for active tiers
+  useEffect(() => {
+    if (loading) return
+    void ensureMetrics(activeMetricTiers)
+  }, [loading, ensureMetrics, activeMetricTiers])
+
+  // Load area detail on selection (~40KB)
+  useEffect(() => {
+    let cancelled = false
+    const areaName = selectedArea
+    if (!areaName) return
+
+    const cached = areaCacheRef.current.get(areaName)
+    if (cached) {
+      setSelectedDetail(cached)
+      return
+    }
+
+    // Try name index; fall back to national
+    const entry = resolveIndexEntry(nameIndex, areaName)
+    if (!entry && nameIndex.size === 0) return
+
+    ;(async () => {
+      setDetailLoading(true)
+      try {
+        let detail: AreaDetail
+        if (entry) {
+          detail = await loadAreaBySlug(entry.slug)
+        } else if (manifest?.nationalSlug) {
+          detail = await loadAreaBySlug(manifest.nationalSlug)
+        } else {
+          detail = await loadNational()
+        }
+        if (cancelled) return
+        areaCacheRef.current.set(detail.name, detail)
+        // Also cache under the selected label if different
+        areaCacheRef.current.set(areaName, detail)
+        setSelectedDetail(detail)
+      } catch (err) {
+        console.error('Failed to load area detail', err)
+        if (!cancelled) {
+          // Keep previous detail rather than blanking panel
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedArea, nameIndex, manifest])
+
+  const metrics = useMemo(() => {
+    const parts: Record<string, number>[] = []
+    for (const tier of activeMetricTiers) {
+      const key = metricsKey(tier, selectedYear, selectedAgeGroup)
+      if (metricsByKey[key]) parts.push(metricsByKey[key])
+    }
+    return Object.assign({}, ...parts)
+  }, [activeMetricTiers, metricsByKey, selectedYear, selectedAgeGroup])
+
+  const regionData = useMemo<RegionData>(() => {
+    if (!selectedDetail) return {}
+    return { [selectedDetail.name]: selectedDetail.single }
+  }, [selectedDetail])
+
+  const unifiedData = useMemo<UnifiedData>(() => {
+    if (!selectedDetail) {
+      return { detailedSingle: {}, level3: {} }
+    }
+    return {
+      detailedSingle: { [selectedDetail.name]: selectedDetail.single },
+      level3: selectedDetail.level3 ? { [selectedDetail.name]: selectedDetail.level3 } : {},
+    }
+  }, [selectedDetail])
+
+  const availableYears = manifest?.years ?? ['2013', '2018', '2023']
+  const availableAgeGroups = (manifest?.ageGroups as AgeGroup[]) ?? AGE_GROUPS
+
+  const value: DataContextType = {
+    selectedArea,
+    setSelectedArea,
+    selectedYear,
+    setSelectedYear,
+    selectedAgeGroup,
+    setSelectedAgeGroup,
+    availableYears,
+    availableAgeGroups,
+    metrics,
+    nameIndex,
+    loading,
+    detailLoading,
+    error,
+    ensureMetrics,
+    nationalKey: manifest?.nationalKey ?? NATIONAL_KEY,
+    manifest,
+    selectedDetail,
+    regionData,
+    unifiedData,
+  }
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>
+}
+
+export function useSelectedRegionData() {
+  const { selectedDetail } = useData()
+  return selectedDetail?.single ?? null
+}

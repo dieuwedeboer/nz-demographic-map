@@ -63,11 +63,12 @@ export function europeanFillColor(percentage?: number): string {
   }
 
   if (percentage > 70) {
-    return `rgb(${Math.round(30 + (70 - percentage) * 0.5)}, ${Math.round(80 + (170 - percentage) * 1.5)}, ${Math.round(180 + (230 - percentage) * 0.5)})`
+    const t = Math.min((percentage - 70) / 30, 1)
+    return `rgb(${Math.round(30 + t * 100)}, ${Math.round(120 + t * 120)}, ${Math.round(220 + t * 30)})`
   }
   if (percentage >= 50) {
     const t = (percentage - 50) / 20
-    return `rgb(${Math.round(100 + t * 80)}, ${Math.round(150 + t * 80)}, ${Math.round(220 + t * 30)})`
+    return `rgb(${Math.round(30)}, ${Math.round(100 + t * 20)}, ${Math.round(200 + t * 20)})`
   }
   const t = percentage / 50
   return `rgb(${Math.round(180 * (1 - t) + 30 * t)}, ${Math.round(120 * (1 - t) + 40 * t)}, ${Math.round(80 * (1 - t) + 30 * t)})`

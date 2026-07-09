@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
 import ControlPanel from './ControlPanel'
 import { useData } from './contexts/DataContext'
+import { useTheme } from './contexts/ThemeContext'
 import { europeanFillColor, tierForZoom } from './domain/geo'
 import {
   type GeographyTier,
@@ -23,6 +24,11 @@ const NZ_BOUNDS: [[number, number], [number, number]] = [
   [160.0, -50.0],
   [185.0, -32.0],
 ]
+
+const BASEMAP_TILES = {
+  light: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+  dark: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+} as const
 
 function colorExpression(
   metrics: Record<string, number>,
@@ -58,6 +64,7 @@ function MapView() {
     nationalKey,
     detailLoading,
   } = useData()
+  const { theme } = useTheme()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -75,6 +82,21 @@ function MapView() {
     }
   }, [])
 
+  // Swap basemap tiles when theme changes
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !map.getSource('basemap')) return
+    map.removeLayer('basemap')
+    map.removeSource('basemap')
+    map.addSource('basemap', {
+      type: 'raster',
+      tiles: [BASEMAP_TILES[theme === 'dark' ? 'dark' : 'light']],
+      tileSize: 256,
+      attribution: '© CARTO © OpenStreetMap contributors',
+    })
+    map.addLayer({ id: 'basemap', type: 'raster', source: 'basemap' }, 'rc-fill')
+  }, [theme, mapReady])
+
   // Init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -84,6 +106,12 @@ function MapView() {
       style: {
         version: 8,
         sources: {
+          basemap: {
+            type: 'raster',
+            tiles: [BASEMAP_TILES.light],
+            tileSize: 256,
+            attribution: '© CARTO © OpenStreetMap contributors',
+          },
           rc: {
             type: 'vector',
             url: `pmtiles://${pmtilesUrl('tiles/rc.pmtiles')}`,
@@ -98,11 +126,7 @@ function MapView() {
           },
         },
         layers: [
-          {
-            id: 'background',
-            type: 'background',
-            paint: { 'background-color': '#e8e8e8' },
-          },
+          { id: 'basemap', type: 'raster', source: 'basemap' },
           {
             id: 'rc-fill',
             type: 'fill',

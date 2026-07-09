@@ -28,6 +28,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@types/node": "^24.9.1",
     "@types/react": "^19.0.0",
@@ -39,5 +41,12 @@
     "typescript": "~5.6.2",
     "vite": "^6.0.5",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2"
   }
 }

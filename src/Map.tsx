@@ -1,5 +1,4 @@
 import maplibregl from 'maplibre-gl'
-import { Protocol } from 'pmtiles'
 import { useEffect, useRef, useState } from 'react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
@@ -15,7 +14,7 @@ import {
   TILE_SOURCES,
 } from './domain/types'
 import InfoPanel from './InfoPanel'
-import { pmtilesUrl } from './lib/paths'
+import { assetUrl } from './lib/paths'
 import MapLegend from './MapLegend'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
@@ -29,6 +28,65 @@ const BASEMAP_TILES = {
   light: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
   dark: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
 } as const
+
+const EMPTY_SELECTION_FILTER: maplibregl.FilterSpecification = [
+  '==',
+  ['literal', ''],
+  ['literal', 'selected-area'],
+]
+
+function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
+  const sourceId = `${tier}-borders`
+  const layerId = `${tier}-border`
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: assetUrl(`tiles/${tier}-borders.geojson`),
+      buffer: 512,
+      tolerance: 0,
+    })
+  }
+  if (!map.getLayer(layerId)) {
+    map.addLayer(
+      {
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#555',
+          'line-width': borderLineWidth(tier),
+          'line-opacity': borderLineOpacity(tier),
+        },
+        layout: {
+          visibility: 'none',
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+      },
+      `${tier}-selected-fill`,
+    )
+  }
+}
+
+function borderLineWidth(tier: GeographyTier): maplibregl.ExpressionSpecification {
+  if (tier === 'rc') {
+    return ['interpolate', ['linear'], ['zoom'], 2, 0.35, 5, 0.65, 8, 1]
+  }
+  if (tier === 'ta') {
+    return ['interpolate', ['linear'], ['zoom'], 8, 0.5, 10, 0.8, 11, 1]
+  }
+  return ['interpolate', ['linear'], ['zoom'], 11, 0.35, 12, 0.5, 14, 0.7]
+}
+
+function borderLineOpacity(tier: GeographyTier): maplibregl.ExpressionSpecification {
+  if (tier === 'rc') {
+    return ['interpolate', ['linear'], ['zoom'], 2, 0.5, 5, 0.65, 8, 0.95]
+  }
+  if (tier === 'ta') {
+    return ['interpolate', ['linear'], ['zoom'], 8, 0.6, 10, 0.8, 11, 0.95]
+  }
+  return ['interpolate', ['linear'], ['zoom'], 11, 0.5, 12, 0.65, 14, 0.8]
+}
 
 function colorExpression(
   metrics: Record<string, number>,
@@ -73,15 +131,6 @@ function MapView() {
   const [showRegionalCouncils, setShowRegionalCouncils] = useState(true)
   const [showTerritorialAuthorities, setShowTerritorialAuthorities] = useState(true)
   const [showSA2, setShowSA2] = useState(true)
-  // Register PMTiles protocol once
-  useEffect(() => {
-    const protocol = new Protocol()
-    maplibregl.addProtocol('pmtiles', protocol.tile)
-    return () => {
-      maplibregl.removeProtocol('pmtiles')
-    }
-  }, [])
-
   // Swap basemap tiles when theme changes
   useEffect(() => {
     const map = mapRef.current
@@ -113,16 +162,22 @@ function MapView() {
             attribution: '© CARTO © OpenStreetMap contributors',
           },
           rc: {
-            type: 'vector',
-            url: `pmtiles://${pmtilesUrl('tiles/rc.pmtiles')}`,
+            type: 'geojson',
+            data: assetUrl('tiles/rc-fills.geojson'),
+            buffer: 512,
+            tolerance: 0,
           },
           ta: {
-            type: 'vector',
-            url: `pmtiles://${pmtilesUrl('tiles/ta.pmtiles')}`,
+            type: 'geojson',
+            data: assetUrl('tiles/ta-fills.geojson'),
+            buffer: 512,
+            tolerance: 0,
           },
           sa2: {
-            type: 'vector',
-            url: `pmtiles://${pmtilesUrl('tiles/sa2.pmtiles')}`,
+            type: 'geojson',
+            data: assetUrl('tiles/sa2-fills.geojson'),
+            buffer: 512,
+            tolerance: 0,
           },
         },
         layers: [
@@ -131,64 +186,68 @@ function MapView() {
             id: 'rc-fill',
             type: 'fill',
             source: 'rc',
-            'source-layer': TILE_SOURCES.rc.layer,
             paint: {
               'fill-color': '#888',
               'fill-opacity': 0.88,
+              'fill-antialias': false,
             },
           },
           {
-            id: 'rc-line',
-            type: 'line',
+            id: 'rc-selected-fill',
+            type: 'fill',
             source: 'rc',
-            'source-layer': TILE_SOURCES.rc.layer,
-            paint: { 'line-color': '#444', 'line-width': 1 },
+            paint: {
+              'fill-color': '#000',
+              'fill-opacity': 0.14,
+              'fill-antialias': false,
+            },
+            filter: EMPTY_SELECTION_FILTER,
           },
           {
             id: 'ta-fill',
             type: 'fill',
             source: 'ta',
-            'source-layer': TILE_SOURCES.ta.layer,
             paint: {
               'fill-color': '#888',
               'fill-opacity': 0.88,
+              'fill-antialias': false,
             },
             layout: { visibility: 'none' },
           },
           {
-            id: 'ta-line',
-            type: 'line',
+            id: 'ta-selected-fill',
+            type: 'fill',
             source: 'ta',
-            'source-layer': TILE_SOURCES.ta.layer,
-            paint: { 'line-color': '#444', 'line-width': 1 },
+            paint: {
+              'fill-color': '#000',
+              'fill-opacity': 0.14,
+              'fill-antialias': false,
+            },
             layout: { visibility: 'none' },
+            filter: EMPTY_SELECTION_FILTER,
           },
           {
             id: 'sa2-fill',
             type: 'fill',
             source: 'sa2',
-            'source-layer': TILE_SOURCES.sa2.layer,
             paint: {
               'fill-color': '#888',
               'fill-opacity': 0.88,
+              'fill-antialias': false,
             },
             layout: { visibility: 'none' },
           },
           {
-            id: 'sa2-line',
-            type: 'line',
+            id: 'sa2-selected-fill',
+            type: 'fill',
             source: 'sa2',
-            'source-layer': TILE_SOURCES.sa2.layer,
-            paint: { 'line-color': '#444', 'line-width': 0.5 },
+            paint: {
+              'fill-color': '#000',
+              'fill-opacity': 0.14,
+              'fill-antialias': false,
+            },
             layout: { visibility: 'none' },
-          },
-          {
-            id: 'selected-line',
-            type: 'line',
-            source: 'rc',
-            'source-layer': TILE_SOURCES.rc.layer,
-            paint: { 'line-color': '#000', 'line-width': 3 },
-            filter: ['==', ['get', TILE_SOURCES.rc.nameProp], ''],
+            filter: EMPTY_SELECTION_FILTER,
           },
         ],
       },
@@ -272,40 +331,30 @@ function MapView() {
     else if (showTerritorialAuthorities) active = 'ta'
     else if (showSA2) active = 'sa2'
 
+    ensureBorderLayer(map, active)
+
     for (const tier of ['rc', 'ta', 'sa2'] as const) {
       const vis = tier === active ? 'visible' : 'none'
       if (map.getLayer(`${tier}-fill`)) map.setLayoutProperty(`${tier}-fill`, 'visibility', vis)
-      if (map.getLayer(`${tier}-line`)) map.setLayoutProperty(`${tier}-line`, 'visibility', vis)
+      if (map.getLayer(`${tier}-border`)) map.setLayoutProperty(`${tier}-border`, 'visibility', vis)
+      if (map.getLayer(`${tier}-selected-fill`)) {
+        map.setLayoutProperty(`${tier}-selected-fill`, 'visibility', vis)
+      }
     }
 
     for (const tier of ['rc', 'ta', 'sa2'] as const) {
-      if (!map.getLayer(`${tier}-line`)) continue
-      const isActive =
+      if (!map.getLayer(`${tier}-selected-fill`)) continue
+      const isSelectedActive =
         tier === active &&
         selectedArea &&
         selectedArea !== NATIONAL_KEY &&
         selectedArea !== nationalKey
-      if (isActive) {
-        map.setPaintProperty(`${tier}-line`, 'line-width', [
-          'case',
-          ['==', ['get', TILE_SOURCES[tier].nameProp], selectedArea],
-          3,
-          tier === 'sa2' ? 0.5 : 1,
-        ])
-        map.setPaintProperty(`${tier}-line`, 'line-color', [
-          'case',
-          ['==', ['get', TILE_SOURCES[tier].nameProp], selectedArea],
-          '#000',
-          '#444',
-        ])
-      } else {
-        map.setPaintProperty(`${tier}-line`, 'line-width', tier === 'sa2' ? 0.5 : 1)
-        map.setPaintProperty(`${tier}-line`, 'line-color', '#444')
-      }
-    }
-
-    if (map.getLayer('selected-line')) {
-      map.setLayoutProperty('selected-line', 'visibility', 'none')
+      map.setFilter(
+        `${tier}-selected-fill`,
+        isSelectedActive
+          ? ['==', ['get', TILE_SOURCES[tier].nameProp], selectedArea]
+          : EMPTY_SELECTION_FILTER,
+      )
     }
   }, [
     zoomLevel,

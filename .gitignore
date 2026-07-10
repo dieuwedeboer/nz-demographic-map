@@ -11,6 +11,9 @@ coverage
 # Logs
 *.log
 
+# Local data generation caches
+.cache/
+
 # Intermediate tile build products
 *.mbtiles
 src/assets/*.pmtiles

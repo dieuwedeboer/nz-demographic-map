@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
 import ControlPanel from './ControlPanel'
 import { useData } from './contexts/DataContext'
+import { useTheme } from './contexts/ThemeContext'
 import { europeanFillColor, getEuropeanData } from './domain/geo'
 import {
   type GeographyTier,
@@ -31,6 +32,16 @@ const GEOGRAPHY_TIERS: GeographyTier[] = ['rc', 'ta', 'sa2']
 const BORDER_COLOR = '#2f2f2f'
 const SELECTED_DOT_SPACING = 7
 const SELECTED_DOT_RADIUS = 1
+const MAP_BACKGROUND = {
+  light: '#eef2f1',
+  dark: '#101820',
+} as const
+
+function hasFineHoverPointer() {
+  return (
+    typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  )
+}
 
 function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
   const sourceId = `${tier}-borders`
@@ -330,6 +341,7 @@ function MapView() {
     nationalDetail,
     detailLoading,
   } = useData()
+  const { theme } = useTheme()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const selectedCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -396,7 +408,7 @@ function MapView() {
             id: 'background',
             type: 'background',
             paint: {
-              'background-color': '#f8f9fa',
+              'background-color': MAP_BACKGROUND.light,
             },
           },
           {
@@ -463,8 +475,6 @@ function MapView() {
       fadeDuration: 0,
     })
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
-
     map.on('load', () => {
       fitNzBounds(map)
       setMapReady(true)
@@ -480,6 +490,15 @@ function MapView() {
     })
     let hoveredFeature: HoveredFeature | null = null
 
+    const leaveHandler = () => {
+      map.getCanvas().style.cursor = ''
+      clearHoveredFeature(map, hoveredFeature)
+      hoveredFeature = null
+      hoverPopup.remove()
+    }
+    const clearHoverOnTouch = (_event: TouchEvent) => {
+      leaveHandler()
+    }
     const clickHandler = (tier: GeographyTier) => (e: maplibregl.MapMouseEvent) => {
       const nameProp = TILE_SOURCES[tier].nameProp
       const features = map.queryRenderedFeatures(e.point, {
@@ -489,9 +508,15 @@ function MapView() {
       if (typeof name === 'string' && name) {
         setSelectedArea(name)
       }
+      leaveHandler()
     }
     const hoverHandler =
       (source: string, nameProp: string) => (e: maplibregl.MapLayerMouseEvent) => {
+        if (!hasFineHoverPointer()) {
+          leaveHandler()
+          return
+        }
+
         const feature = e.features?.[0]
         const name = feature?.properties?.[nameProp]
         if (typeof name !== 'string' || !name) return
@@ -513,17 +538,14 @@ function MapView() {
         map.setFeatureState(hoveredFeature, { hover: true })
         hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
       }
-    const leaveHandler = () => {
-      map.getCanvas().style.cursor = ''
-      clearHoveredFeature(map, hoveredFeature)
-      hoveredFeature = null
-      hoverPopup.remove()
-    }
 
     map.on('click', 'rc-fill', clickHandler('rc'))
     map.on('click', 'ta-fill', clickHandler('ta'))
     map.on('click', 'sa2-fill', clickHandler('sa2'))
-    map.on('click', 'national-fill', () => setSelectedArea(nationalKey))
+    map.on('click', 'national-fill', () => {
+      setSelectedArea(nationalKey)
+      leaveHandler()
+    })
 
     map.on('mousemove', 'national-fill', hoverHandler('national', 'name'))
     map.on('mousemove', 'rc-fill', hoverHandler('rc', TILE_SOURCES.rc.nameProp))
@@ -537,8 +559,14 @@ function MapView() {
       map.on('mouseleave', layer, leaveHandler)
     }
 
+    const canvas = map.getCanvas()
+    canvas.addEventListener('touchend', clearHoverOnTouch)
+    canvas.addEventListener('touchcancel', clearHoverOnTouch)
+
     mapRef.current = map
     return () => {
+      canvas.removeEventListener('touchend', clearHoverOnTouch)
+      canvas.removeEventListener('touchcancel', clearHoverOnTouch)
       hoverPopup.remove()
       map.remove()
       mapRef.current = null
@@ -640,6 +668,12 @@ function MapView() {
     }
   }, [mapReady, selectedFeature])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !map.getLayer('background')) return
+    map.setPaintProperty('background', 'background-color', MAP_BACKGROUND[theme])
+  }, [theme, mapReady])
+
   // Apply metrics to fill colors
   useEffect(() => {
     const map = mapRef.current
@@ -695,22 +729,26 @@ function MapView() {
         />
       </div>
       <AreaSearch onSelect={flyToSearch} disabled={loading} />
-      <ControlPanel
-        availableYears={availableYears}
-        selectedYear={selectedYear}
-        onYearChange={setSelectedYear}
-        availableAgeGroups={availableAgeGroups}
-        selectedAgeGroup={selectedAgeGroup}
-        onAgeGroupChange={setSelectedAgeGroup}
-        showRegionalCouncils={showRegionalCouncils}
-        onShowRegionalCouncilsChange={setShowRegionalCouncils}
-        showTerritorialAuthorities={showTerritorialAuthorities}
-        onShowTerritorialAuthoritiesChange={setShowTerritorialAuthorities}
-        showSA2={showSA2}
-        onShowSA2Change={setShowSA2}
-        disabled={loading}
+      <InfoPanel
+        controls={
+          <ControlPanel
+            availableYears={availableYears}
+            selectedYear={selectedYear}
+            onYearChange={setSelectedYear}
+            availableAgeGroups={availableAgeGroups}
+            selectedAgeGroup={selectedAgeGroup}
+            onAgeGroupChange={setSelectedAgeGroup}
+            showRegionalCouncils={showRegionalCouncils}
+            onShowRegionalCouncilsChange={setShowRegionalCouncils}
+            showTerritorialAuthorities={showTerritorialAuthorities}
+            onShowTerritorialAuthoritiesChange={setShowTerritorialAuthorities}
+            showSA2={showSA2}
+            onShowSA2Change={setShowSA2}
+            disabled={loading}
+            embedded
+          />
+        }
       />
-      <InfoPanel />
       <MapLegend />
       {loading && <div className="map-overlay-message">Loading map...</div>}
       {detailLoading && !loading && <div className="map-overlay-detail">Loading area...</div>}

@@ -36,6 +36,7 @@ const DATAFINDER_LAYERS = {
     outputNameProp: 'SA22025__2',
   },
 }
+const NATIONAL_NAME = 'Total - New Zealand by regional council'
 const QUERY_CONCURRENCY = 8
 const QUERY_RADIUS_METRES = 10000
 const MAX_CANDIDATES_PER_AREA = 12
@@ -517,6 +518,30 @@ function collectSegments(features) {
   return [...segmentMap.values()]
 }
 
+function collectOuterSegments(features) {
+  const segmentCounts = new Map()
+  const segmentsByKey = new Map()
+  for (const feature of features) {
+    forEachRing(feature.geometry, ring => {
+      for (let index = 1; index < ring.length; index++) {
+        const start = ring[index - 1]
+        const end = ring[index]
+        if (pointKey(start) === pointKey(end)) continue
+
+        const key = segmentKey(start, end)
+        segmentCounts.set(key, (segmentCounts.get(key) || 0) + 1)
+        if (!segmentsByKey.has(key)) {
+          segmentsByKey.set(key, { start, end })
+        }
+      }
+    })
+  }
+
+  return [...segmentsByKey.entries()]
+    .filter(([key]) => segmentCounts.get(key) === 1)
+    .map(([, segment]) => segment)
+}
+
 function forEachRing(geometry, callback) {
   if (geometry.type === 'Polygon') {
     for (const ring of geometry.coordinates) callback(ring)
@@ -617,6 +642,55 @@ function lineFeature(coordinates) {
   }
 }
 
+function nationalFillFeature(features) {
+  const polygons = []
+  for (const feature of features) {
+    if (feature.geometry.type === 'Polygon') {
+      polygons.push(feature.geometry.coordinates)
+    } else if (feature.geometry.type === 'MultiPolygon') {
+      polygons.push(...feature.geometry.coordinates)
+    }
+  }
+
+  return {
+    type: 'Feature',
+    properties: {
+      name: NATIONAL_NAME,
+    },
+    geometry: {
+      type: 'MultiPolygon',
+      coordinates: polygons,
+    },
+  }
+}
+
+async function writeNationalGeometry(features) {
+  const fillOutputPath = 'public/tiles/national-fills.geojson'
+  const borderOutputPath = 'public/tiles/national-borders.geojson'
+  const outerSegments = collectOuterSegments(features)
+  const lines = stitchSegments(outerSegments)
+
+  await fs.writeFile(
+    fillOutputPath,
+    `${JSON.stringify({
+      type: 'FeatureCollection',
+      features: [nationalFillFeature(features)],
+    })}\n`,
+  )
+  await fs.writeFile(
+    borderOutputPath,
+    `${JSON.stringify({
+      type: 'FeatureCollection',
+      features: lines.map(lineFeature),
+    })}\n`,
+  )
+
+  console.log(
+    `${borderOutputPath}: ${lines.length.toLocaleString()} outer lines from ` +
+      `${outerSegments.length.toLocaleString()} outer segments`,
+  )
+}
+
 async function generateBorders(tier) {
   const outputPath = `public/tiles/${tier}-borders.geojson`
   const candidatesByName = await collectCandidatePoints(tier)
@@ -649,6 +723,10 @@ async function generateBorders(tier) {
 
     await fs.writeFile(fillOutputPath, `${JSON.stringify(fillCollection)}\n`)
     console.log(`${fillOutputPath}: ${fillCollection.features.length.toLocaleString()} polygons`)
+  }
+
+  if (tier === 'rc') {
+    await writeNationalGeometry(fillFeatures)
   }
 }
 

@@ -4,8 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
 import ControlPanel from './ControlPanel'
 import { useData } from './contexts/DataContext'
-import { useTheme } from './contexts/ThemeContext'
-import { europeanFillColor, tierForZoom } from './domain/geo'
+import { europeanFillColor, getEuropeanData } from './domain/geo'
 import {
   type GeographyTier,
   NATIONAL_KEY,
@@ -23,11 +22,6 @@ const NZ_BOUNDS: [[number, number], [number, number]] = [
   [160.0, -50.0],
   [185.0, -32.0],
 ]
-
-const BASEMAP_TILES = {
-  light: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-  dark: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-} as const
 
 const EMPTY_SELECTION_FILTER: maplibregl.FilterSpecification = [
   '==',
@@ -105,6 +99,31 @@ function colorExpression(
   return matchExpr as maplibregl.ExpressionSpecification
 }
 
+function activeGeographyTier(
+  zoom: number,
+  showRegionalCouncils: boolean,
+  showTerritorialAuthorities: boolean,
+  showSA2: boolean,
+): GeographyTier | null {
+  const showRc =
+    showRegionalCouncils &&
+    (zoom < TA_ZOOM_THRESHOLD ||
+      (!showTerritorialAuthorities && zoom < SA2_ZOOM_THRESHOLD) ||
+      (!showTerritorialAuthorities && !showSA2))
+  const showTa =
+    showTerritorialAuthorities &&
+    zoom >= TA_ZOOM_THRESHOLD &&
+    (zoom < SA2_ZOOM_THRESHOLD || !showSA2)
+  const showSa2Layer = showSA2 && zoom >= SA2_ZOOM_THRESHOLD
+
+  if (showSa2Layer) return 'sa2'
+  if (showTa) return 'ta'
+  if (showRc) return 'rc'
+  if (showTerritorialAuthorities) return 'ta'
+  if (showSA2) return 'sa2'
+  return null
+}
+
 function MapView() {
   const {
     selectedArea,
@@ -120,9 +139,9 @@ function MapView() {
     error,
     ensureMetrics,
     nationalKey,
+    nationalDetail,
     detailLoading,
   } = useData()
-  const { theme } = useTheme()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -131,20 +150,6 @@ function MapView() {
   const [showRegionalCouncils, setShowRegionalCouncils] = useState(true)
   const [showTerritorialAuthorities, setShowTerritorialAuthorities] = useState(true)
   const [showSA2, setShowSA2] = useState(true)
-  // Swap basemap tiles when theme changes
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady || !map.getSource('basemap')) return
-    map.removeLayer('basemap')
-    map.removeSource('basemap')
-    map.addSource('basemap', {
-      type: 'raster',
-      tiles: [BASEMAP_TILES[theme === 'dark' ? 'dark' : 'light']],
-      tileSize: 256,
-      attribution: '© CARTO © OpenStreetMap contributors',
-    })
-    map.addLayer({ id: 'basemap', type: 'raster', source: 'basemap' }, 'rc-fill')
-  }, [theme, mapReady])
 
   // Init map
   useEffect(() => {
@@ -155,11 +160,17 @@ function MapView() {
       style: {
         version: 8,
         sources: {
-          basemap: {
-            type: 'raster',
-            tiles: [BASEMAP_TILES.light],
-            tileSize: 256,
-            attribution: '© CARTO © OpenStreetMap contributors',
+          national: {
+            type: 'geojson',
+            data: assetUrl('tiles/national-fills.geojson'),
+            buffer: 512,
+            tolerance: 0,
+          },
+          'national-borders': {
+            type: 'geojson',
+            data: assetUrl('tiles/national-borders.geojson'),
+            buffer: 512,
+            tolerance: 0,
           },
           rc: {
             type: 'geojson',
@@ -181,7 +192,39 @@ function MapView() {
           },
         },
         layers: [
-          { id: 'basemap', type: 'raster', source: 'basemap' },
+          {
+            id: 'background',
+            type: 'background',
+            paint: {
+              'background-color': '#f8f9fa',
+            },
+          },
+          {
+            id: 'national-fill',
+            type: 'fill',
+            source: 'national',
+            paint: {
+              'fill-color': '#888',
+              'fill-opacity': 0.88,
+              'fill-antialias': false,
+            },
+            layout: { visibility: 'none' },
+          },
+          {
+            id: 'national-border',
+            type: 'line',
+            source: 'national-borders',
+            paint: {
+              'line-color': '#555',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 6, 0.9, 9, 1.2],
+              'line-opacity': 0.75,
+            },
+            layout: {
+              visibility: 'none',
+              'line-cap': 'round',
+              'line-join': 'round',
+            },
+          },
           {
             id: 'rc-fill',
             type: 'fill',
@@ -256,6 +299,7 @@ function MapView() {
       maxBounds: NZ_BOUNDS,
       minZoom: 2,
       maxZoom: 14,
+      attributionControl: false,
     })
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
@@ -281,8 +325,9 @@ function MapView() {
     map.on('click', 'rc-fill', clickHandler('rc'))
     map.on('click', 'ta-fill', clickHandler('ta'))
     map.on('click', 'sa2-fill', clickHandler('sa2'))
+    map.on('click', 'national-fill', () => setSelectedArea(nationalKey))
 
-    for (const layer of ['rc-fill', 'ta-fill', 'sa2-fill']) {
+    for (const layer of ['national-fill', 'rc-fill', 'ta-fill', 'sa2-fill']) {
       map.on('mouseenter', layer, () => {
         map.getCanvas().style.cursor = 'pointer'
       })
@@ -296,45 +341,43 @@ function MapView() {
       map.remove()
       mapRef.current = null
     }
-  }, [setSelectedArea])
+  }, [setSelectedArea, nationalKey])
 
   // Lazy-load choropleth metrics only (KB), not full census tables
   useEffect(() => {
-    const tier = tierForZoom(zoomLevel)
-    const needed: GeographyTier[] = ['rc']
-    if (tier === 'ta' || tier === 'sa2') needed.push('ta')
-    if (tier === 'sa2') needed.push('sa2')
-    void ensureMetrics(needed)
-  }, [zoomLevel, ensureMetrics])
+    const active = activeGeographyTier(
+      zoomLevel,
+      showRegionalCouncils,
+      showTerritorialAuthorities,
+      showSA2,
+    )
+    void ensureMetrics(active ? [active] : [])
+  }, [zoomLevel, showRegionalCouncils, showTerritorialAuthorities, showSA2, ensureMetrics])
 
   // Layer visibility by zoom + toggles
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
 
-    const showRc =
-      showRegionalCouncils &&
-      (zoomLevel < TA_ZOOM_THRESHOLD ||
-        (!showTerritorialAuthorities && zoomLevel < SA2_ZOOM_THRESHOLD) ||
-        (!showTerritorialAuthorities && !showSA2))
-    const showTa =
-      showTerritorialAuthorities &&
-      zoomLevel >= TA_ZOOM_THRESHOLD &&
-      (zoomLevel < SA2_ZOOM_THRESHOLD || !showSA2)
-    const showSa2Layer = showSA2 && zoomLevel >= SA2_ZOOM_THRESHOLD
+    const showNational = !showRegionalCouncils && !showTerritorialAuthorities && !showSA2
+    const active = activeGeographyTier(
+      zoomLevel,
+      showRegionalCouncils,
+      showTerritorialAuthorities,
+      showSA2,
+    )
 
-    // Prefer finest enabled tier
-    let active: GeographyTier = 'rc'
-    if (showSa2Layer) active = 'sa2'
-    else if (showTa) active = 'ta'
-    else if (showRc) active = 'rc'
-    else if (showTerritorialAuthorities) active = 'ta'
-    else if (showSA2) active = 'sa2'
+    if (active) ensureBorderLayer(map, active)
 
-    ensureBorderLayer(map, active)
+    if (map.getLayer('national-fill')) {
+      map.setLayoutProperty('national-fill', 'visibility', showNational ? 'visible' : 'none')
+    }
+    if (map.getLayer('national-border')) {
+      map.setLayoutProperty('national-border', 'visibility', showNational ? 'visible' : 'none')
+    }
 
     for (const tier of ['rc', 'ta', 'sa2'] as const) {
-      const vis = tier === active ? 'visible' : 'none'
+      const vis = active === tier ? 'visible' : 'none'
       if (map.getLayer(`${tier}-fill`)) map.setLayoutProperty(`${tier}-fill`, 'visibility', vis)
       if (map.getLayer(`${tier}-border`)) map.setLayoutProperty(`${tier}-border`, 'visibility', vis)
       if (map.getLayer(`${tier}-selected-fill`)) {
@@ -345,7 +388,7 @@ function MapView() {
     for (const tier of ['rc', 'ta', 'sa2'] as const) {
       if (!map.getLayer(`${tier}-selected-fill`)) continue
       const isSelectedActive =
-        tier === active &&
+        active === tier &&
         selectedArea &&
         selectedArea !== NATIONAL_KEY &&
         selectedArea !== nationalKey
@@ -371,13 +414,26 @@ function MapView() {
     const map = mapRef.current
     if (!map || !mapReady) return
 
+    const nationalMetric = getEuropeanData(
+      nationalDetail?.single ?? null,
+      selectedYear,
+      selectedAgeGroup,
+    )
+    if (map.getLayer('national-fill')) {
+      map.setPaintProperty(
+        'national-fill',
+        'fill-color',
+        europeanFillColor(nationalMetric?.percentage),
+      )
+    }
+
     for (const tier of ['rc', 'ta', 'sa2'] as const) {
       const layerId = `${tier}-fill`
       if (!map.getLayer(layerId)) continue
       const nameProp = TILE_SOURCES[tier].nameProp
       map.setPaintProperty(layerId, 'fill-color', colorExpression(metrics, nameProp))
     }
-  }, [metrics, mapReady])
+  }, [metrics, mapReady, nationalDetail, selectedYear, selectedAgeGroup])
 
   const flyToSearch = (hit: SearchHit, zoom: number) => {
     setSelectedArea(hit.name)

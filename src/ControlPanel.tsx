@@ -16,6 +16,7 @@ interface ControlPanelProps {
   showSA2: boolean
   onShowSA2Change: (show: boolean) => void
   disabled?: boolean
+  embedded?: boolean
 }
 
 function ControlPanel({
@@ -32,28 +33,42 @@ function ControlPanel({
   showSA2,
   onShowSA2Change,
   disabled = false,
+  embedded = false,
 }: ControlPanelProps) {
   const { theme, toggleTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
+  const layerToggles = [
+    {
+      id: 'regional-councils-layer',
+      label: 'Regional Councils',
+      description: 'Broad regions',
+      checked: showRegionalCouncils,
+      onChange: onShowRegionalCouncilsChange,
+    },
+    {
+      id: 'territorial-authorities-layer',
+      label: 'Territorial Authorities',
+      description: 'Districts and cities',
+      checked: showTerritorialAuthorities,
+      onChange: onShowTerritorialAuthoritiesChange,
+    },
+    {
+      id: 'statistical-areas-layer',
+      label: 'Statistical Areas',
+      description: 'Local SA2 areas',
+      checked: showSA2,
+      onChange: onShowSA2Change,
+    },
+  ]
 
-  return (
-    <div className={`control-panel ${collapsed ? 'collapsed' : ''}`}>
-      <div className="panel-header">
-        <span className="panel-header-label">Controls</span>
-        <button
-          type="button"
-          className="panel-toggle"
-          onClick={() => setCollapsed((c) => !c)}
-          aria-label={collapsed ? 'Expand controls' : 'Collapse controls'}
-        >
-          {collapsed ? '▶' : '▼'}
-        </button>
-      </div>
-      {!collapsed && (
-        <>
-          <div className="control-section-title">Census</div>
+  const body = (
+    <div className="control-panel-body">
+      <section className="control-section" aria-label="Census filters">
+        <div className="control-section-title">Census</div>
+        <div className="control-grid">
           {availableYears.length > 0 && (
-            <div className="selector-container">
+            <label className="field-control" htmlFor="year-selector">
+              <span>Year</span>
               <select
                 id="year-selector"
                 value={selectedYear}
@@ -66,11 +81,11 @@ function ControlPanel({
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           )}
 
-          <div className="control-section-title">Age</div>
-          <div className="selector-container">
+          <label className="field-control" htmlFor="age-group-selector">
+            <span>Age</span>
             <select
               id="age-group-selector"
               value={selectedAgeGroup}
@@ -83,51 +98,65 @@ function ControlPanel({
                 </option>
               ))}
             </select>
-          </div>
+          </label>
+        </div>
+      </section>
 
-          <div className="control-section-title">Layers</div>
-          <div className="selector-container">
-            <label>
+      <section className="control-section" aria-label="Map layers">
+        <div className="control-section-title">Layers</div>
+        <div className="layer-toggle-list">
+          {layerToggles.map((layer) => (
+            <label key={layer.id} className="layer-toggle" htmlFor={layer.id}>
               <input
+                id={layer.id}
                 type="checkbox"
-                checked={showRegionalCouncils}
-                onChange={(e) => onShowRegionalCouncilsChange(e.target.checked)}
+                checked={layer.checked}
+                onChange={(e) => layer.onChange(e.target.checked)}
                 disabled={disabled}
-              />{' '}
-              Regional Councils
+              />
+              <span className="toggle-track" aria-hidden="true">
+                <span className="toggle-thumb" />
+              </span>
+              <span className="layer-toggle-copy">
+                <strong>{layer.label}</strong>
+                <small>{layer.description}</small>
+              </span>
             </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showTerritorialAuthorities}
-                onChange={(e) => onShowTerritorialAuthoritiesChange(e.target.checked)}
-                disabled={disabled}
-              />{' '}
-              Territorial Authorities
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={showSA2}
-                onChange={(e) => onShowSA2Change(e.target.checked)}
-                disabled={disabled}
-              />{' '}
-              Statistical Areas
-            </label>
-          </div>
+          ))}
+        </div>
+      </section>
 
-          <div className="selector-container theme-row">
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={toggleTheme}
-              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-            >
-              {theme === 'light' ? 'Dark' : 'Light'}
-            </button>
-          </div>
-        </>
-      )}
+      <div className="theme-row">
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={toggleTheme}
+          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        >
+          <span className="theme-toggle-label">Theme</span>
+          <span className="theme-toggle-value">{theme === 'light' ? 'Light' : 'Dark'}</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className={`control-panel ${collapsed ? 'collapsed' : ''}`}>
+      <div className="panel-header">
+        <span className="panel-header-label">Map Controls</span>
+        <button
+          type="button"
+          className="panel-toggle"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? 'Expand controls' : 'Collapse controls'}
+          aria-expanded={!collapsed}
+        >
+          <span className="panel-toggle-icon" aria-hidden="true" />
+        </button>
+      </div>
+      {!collapsed && body}
     </div>
   )
 }

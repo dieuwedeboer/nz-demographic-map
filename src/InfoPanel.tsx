@@ -1,4 +1,13 @@
-import { useMemo, useState } from 'react'
+import {
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
@@ -11,6 +20,28 @@ interface PieSlice {
   startAngle: number
   endAngle: number
 }
+
+type InfoPanelTab = 'details' | 'controls'
+
+interface InfoPanelProps {
+  controls: ReactNode
+}
+
+interface PanelDragState {
+  pointerId: number
+  startY: number
+  startCollapsed: boolean
+  moved: boolean
+}
+
+interface PanelStyle extends CSSProperties {
+  '--panel-drag-offset'?: string
+}
+
+const MOBILE_PANEL_QUERY = '(max-width: 640px)'
+const PANEL_DRAG_THRESHOLD = 44
+const isMobilePanelViewport = () =>
+  typeof window !== 'undefined' && window.matchMedia(MOBILE_PANEL_QUERY).matches
 
 function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean }) {
   const slices = useMemo(() => {
@@ -128,13 +159,26 @@ function AgeBreakdown({
   )
 }
 
-function InfoPanel() {
+function InfoPanel({ controls }: InfoPanelProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
   const { selectedArea, selectedYear, selectedAgeGroup, selectedDetail, detailLoading } = useData()
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => isMobilePanelViewport())
+  const [activeTab, setActiveTab] = useState<InfoPanelTab>('details')
+  const previousSelectedAreaRef = useRef(selectedArea)
+  const dragStateRef = useRef<PanelDragState | null>(null)
+  const suppressClickRef = useRef(false)
+  const [dragOffset, setDragOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    if (previousSelectedAreaRef.current === selectedArea) return
+    previousSelectedAreaRef.current = selectedArea
+    setCollapsed(false)
+    setActiveTab('details')
+  }, [selectedArea])
 
   const toggleExpand = (name: string) => {
     setExpandedCategories((prev) => {
@@ -153,33 +197,198 @@ function InfoPanel() {
   const level3SelectedYearData =
     selectedDetail?.level3?.ethnicityData?.[selectedYear]?.[selectedAgeGroup]
 
-  if (!data || !selectedYearAgeGroupData || typeof total !== 'number') {
-    return (
-      <div className={`info-panel ${isDark ? 'dark' : 'light'} ${collapsed ? 'collapsed' : ''}`}>
-        <div className="panel-header">
-          <span className="panel-header-label">{selectedArea}</span>
+  const isMobilePanel = isMobilePanelViewport
+
+  const selectDrawerTab = (tab: InfoPanelTab) => {
+    const mobile = isMobilePanel()
+
+    if (mobile && activeTab === tab) return
+
+    if (activeTab === tab) {
+      setCollapsed((current) => !current)
+      return
+    }
+    setActiveTab(tab)
+    if (!mobile) setCollapsed(false)
+  }
+
+  const startPanelDrag = (event: PointerEvent<HTMLElement>) => {
+    if (!isMobilePanel()) return
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startCollapsed: collapsed,
+      moved: false,
+    }
+    suppressClickRef.current = false
+    setDragOffset(0)
+    setIsDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const updatePanelDrag = (event: PointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    const deltaY = event.clientY - dragState.startY
+    if (Math.abs(deltaY) > 4) {
+      dragState.moved = true
+      suppressClickRef.current = true
+    }
+
+    const nextOffset = dragState.startCollapsed ? Math.min(0, deltaY) : Math.max(0, deltaY)
+    setDragOffset(nextOffset)
+  }
+
+  const finishPanelDrag = (event: PointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    const deltaY = event.clientY - dragState.startY
+    if (dragState.startCollapsed && deltaY < -PANEL_DRAG_THRESHOLD) {
+      setCollapsed(false)
+    } else if (!dragState.startCollapsed && deltaY > PANEL_DRAG_THRESHOLD) {
+      setCollapsed(true)
+    }
+
+    dragStateRef.current = null
+    setDragOffset(0)
+    setIsDragging(false)
+  }
+
+  const cancelPanelDrag = () => {
+    dragStateRef.current = null
+    setDragOffset(0)
+    setIsDragging(false)
+  }
+
+  const selectMobileTab = (tab: InfoPanelTab, event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (suppressClickRef.current) {
+      event.preventDefault()
+      suppressClickRef.current = false
+      return
+    }
+    setActiveTab(tab)
+    if (collapsed) setCollapsed(false)
+  }
+
+  const toggleMobilePanel = (event: MouseEvent<HTMLDivElement>) => {
+    if (suppressClickRef.current) {
+      event.preventDefault()
+      suppressClickRef.current = false
+      return
+    }
+    if (!isMobilePanel()) return
+    setCollapsed((current) => !current)
+  }
+
+  const renderMobileTabSwitcher = (className: string) => (
+    <div className={className} role="tablist" aria-label="Panel sections">
+      {(['details', 'controls'] as const).map((tab) => {
+        const label = tab === 'details' ? 'Area Details' : 'Map Controls'
+        const active = activeTab === tab
+        return (
           <button
+            key={tab}
             type="button"
-            className="panel-toggle"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={collapsed ? 'Expand info' : 'Collapse info'}
+            className={`info-mobile-tab-button ${active ? 'active' : ''}`}
+            role="tab"
+            aria-selected={active}
+            onClick={(event) => selectMobileTab(tab, event)}
           >
-            {collapsed ? '▶' : '▼'}
+            <span className={`info-drawer-tab-symbol ${tab}`} aria-hidden="true" />
+            <span>{label}</span>
           </button>
-        </div>
-        {!collapsed && (
-          <div className="info-panel-content">
-            <h4>{selectedArea}</h4>
-            <p>
-              {detailLoading || !data
-                ? 'Loading...'
-                : !selectedYearAgeGroupData
-                  ? `No data for ${selectedYear}`
-                  : 'No ethnicity data for this area'}
-            </p>
-          </div>
-        )}
+        )
+      })}
+    </div>
+  )
+
+  const renderDrawer = (detailsContent: ReactNode) => (
+    <div
+      className={`info-panel ${isDark ? 'dark' : 'light'} ${collapsed ? 'collapsed' : ''} ${
+        isDragging ? 'dragging' : ''
+      }`}
+      style={{ '--panel-drag-offset': `${dragOffset}px` } as PanelStyle}
+    >
+      <div className="info-drawer-tabs" role="tablist" aria-label="Side panel sections">
+        {(['details', 'controls'] as const).map((tab) => {
+          const label = tab === 'details' ? 'Area Details' : 'Map Controls'
+          const active = activeTab === tab
+          const ariaLabel = active ? `${label} panel handle` : `Show ${label}`
+          return (
+            <button
+              key={tab}
+              type="button"
+              className={`info-drawer-tab ${active ? 'active' : ''}`}
+              role="tab"
+              aria-label={ariaLabel}
+              aria-selected={active}
+              aria-expanded={active ? !collapsed : undefined}
+              onClick={(event) => {
+                if (suppressClickRef.current) {
+                  event.preventDefault()
+                  suppressClickRef.current = false
+                  return
+                }
+                selectDrawerTab(tab)
+              }}
+            >
+              <span className={`info-drawer-tab-symbol ${tab}`} aria-hidden="true" />
+              <span className="info-drawer-tab-label">{label}</span>
+              <span className="info-drawer-tab-grip" aria-hidden="true" />
+            </button>
+          )
+        })}
       </div>
+      <div
+        className="info-mobile-panel-handle"
+        title={collapsed ? 'Drag up to open panel' : 'Drag down to close panel'}
+        onPointerDown={startPanelDrag}
+        onPointerMove={updatePanelDrag}
+        onPointerUp={finishPanelDrag}
+        onPointerCancel={cancelPanelDrag}
+        onClick={toggleMobilePanel}
+      >
+        <span className="info-mobile-panel-grip" aria-hidden="true" />
+      </div>
+      <div className="info-panel-shell">
+        {renderMobileTabSwitcher('info-mobile-tab-switcher')}
+        <div
+          className="info-panel-content"
+          role="tabpanel"
+          aria-label="Area details"
+          hidden={activeTab !== 'details'}
+        >
+          {detailsContent}
+        </div>
+        <div
+          className="info-panel-content info-controls-content"
+          role="tabpanel"
+          aria-label="Map controls"
+          hidden={activeTab !== 'controls'}
+        >
+          {controls}
+        </div>
+      </div>
+    </div>
+  )
+
+  if (!data || !selectedYearAgeGroupData || typeof total !== 'number') {
+    return renderDrawer(
+      <div className="info-heading">
+        <span className="info-kicker">{selectedYear} Census</span>
+        <h4>{selectedArea}</h4>
+        <p className="info-subtitle">
+          {detailLoading || !data
+            ? 'Loading...'
+            : !selectedYearAgeGroupData
+              ? `No data for ${selectedYear}`
+              : 'No ethnicity data for this area'}
+        </p>
+      </div>,
     )
   }
 
@@ -194,83 +403,71 @@ function InfoPanel() {
   const yearAllAges = data.ethnicityData?.[selectedYear]
   const ageLabel = selectedAgeGroup === 'Total - age' ? 'All ages' : selectedAgeGroup
 
-  return (
-    <div className={`info-panel ${isDark ? 'dark' : 'light'} ${collapsed ? 'collapsed' : ''}`}>
-      <div className="panel-header">
-        <span className="panel-header-label">{selectedArea}</span>
-        <button
-          type="button"
-          className="panel-toggle"
-          onClick={() => setCollapsed((c) => !c)}
-          aria-label={collapsed ? 'Expand info' : 'Collapse info'}
-        >
-          {collapsed ? '▶' : '▼'}
-        </button>
+  return renderDrawer(
+    <>
+      <div className="info-heading">
+        <span className="info-kicker">{selectedYear} Census</span>
+        <h4>{selectedArea}</h4>
+        <span className="info-age-pill">{ageLabel}</span>
       </div>
-      {!collapsed && (
-        <div className="info-panel-content">
-          <h4>{selectedArea}</h4>
-          <p>
-            {selectedYear} · {ageLabel} · single/combination responses
-          </p>
+      <p className="info-subtitle">Single/combination responses</p>
 
-          <EthnicityPie items={items} isDark={isDark} />
+      <EthnicityPie items={items} isDark={isDark} />
 
-          {selectedAgeGroup === 'Total - age' && (
-            <AgeBreakdown yearData={yearAllAges} isDark={isDark} />
-          )}
-
-          {items.map((item) => (
-            <div key={item.name}>
-              <div
-                className={`info-row depth-0 ${!item.isExpandable ? 'no-expand' : ''}`}
-                onClick={() => item.isExpandable && toggleExpand(item.name)}
-              >
-                <span className="info-label">
-                  {item.isExpandable && (
-                    <span className="expand-icon">
-                      {expandedCategories.has(item.name) ? '▼' : '▶'}
-                    </span>
-                  )}
-                  <span>{item.name}</span>
-                </span>
-                <span className="info-value">{item.value.toLocaleString()}</span>
-                <span className="info-pct">({item.percentage}%)</span>
-                <span className={`info-change ${item.changeColorClass}`} title={item.changeTooltip}>
-                  {item.changeIcon}
-                </span>
-              </div>
-              {item.isExpandable &&
-                expandedCategories.has(item.name) &&
-                (item.children ?? [])
-                  .map((childName) => ({
-                    name: childName,
-                    data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
-                  }))
-                  .sort((a, b) => b.data - a.data)
-                  .map((child) => {
-                    const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'
-                    return (
-                      <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
-                        <span className="info-label child">
-                          <span className="expand-icon-placeholder" />
-                          <span>{child.name}</span>
-                        </span>
-                        <span className="info-value">{child.data.toLocaleString()}</span>
-                        <span className="info-pct">({childPct}%)</span>
-                      </div>
-                    )
-                  })}
-            </div>
-          ))}
-
-          <div className="info-total">
-            <span>Total stated:</span>
-            <span>{total.toLocaleString()}</span>
-          </div>
-        </div>
+      {selectedAgeGroup === 'Total - age' && (
+        <AgeBreakdown yearData={yearAllAges} isDark={isDark} />
       )}
-    </div>
+
+      {items.map((item) => (
+        <div key={item.name}>
+          <div
+            className={`info-row depth-0 ${!item.isExpandable ? 'no-expand' : ''}`}
+            onClick={() => item.isExpandable && toggleExpand(item.name)}
+          >
+            <span className="info-label">
+              {item.isExpandable && (
+                <span
+                  className={`expand-icon ${expandedCategories.has(item.name) ? 'expanded' : ''}`}
+                  aria-hidden="true"
+                />
+              )}
+              <span>{item.name}</span>
+            </span>
+            <span className="info-value">{item.value.toLocaleString()}</span>
+            <span className="info-pct">({item.percentage}%)</span>
+            <span className={`info-change ${item.changeColorClass}`} title={item.changeTooltip}>
+              {item.changeIcon}
+            </span>
+          </div>
+          {item.isExpandable &&
+            expandedCategories.has(item.name) &&
+            (item.children ?? [])
+              .map((childName) => ({
+                name: childName,
+                data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
+              }))
+              .sort((a, b) => b.data - a.data)
+              .map((child) => {
+                const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'
+                return (
+                  <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
+                    <span className="info-label child">
+                      <span className="expand-icon-placeholder" />
+                      <span>{child.name}</span>
+                    </span>
+                    <span className="info-value">{child.data.toLocaleString()}</span>
+                    <span className="info-pct">({childPct}%)</span>
+                  </div>
+                )
+              })}
+        </div>
+      ))}
+
+      <div className="info-total">
+        <span>Total stated:</span>
+        <span>{total.toLocaleString()}</span>
+      </div>
+    </>,
   )
 }
 

@@ -87,4 +87,14 @@ describe('europeanFillColor', () => {
     expect(europeanFillColor(80)).toMatch(/^rgb\(/)
     expect(europeanFillColor(undefined)).toBe('#888')
   })
+
+  it('uses a non-grey midpoint at 50%', () => {
+    expect(europeanFillColor(50)).toBe('rgb(246, 232, 170)')
+    expect(europeanFillColor(50)).not.toBe('#888')
+  })
+
+  it('keeps brown below 50% and blue above 50%', () => {
+    expect(europeanFillColor(25)).toBe('rgb(216, 179, 101)')
+    expect(europeanFillColor(75)).toBe('rgb(116, 173, 209)')
+  })
 })

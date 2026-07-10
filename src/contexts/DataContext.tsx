@@ -36,6 +36,7 @@ interface DataContextType {
   error: string | null
   ensureMetrics: (tiers: GeographyTier[]) => Promise<void>
   nationalKey: string
+  nationalDetail: AreaDetail | null
   manifest: DataManifest | null
   selectedDetail: AreaDetail | null
   regionData: RegionData
@@ -65,6 +66,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [selectedYear, setSelectedYear] = useState('2023')
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>('Total - age')
   const [selectedDetail, setSelectedDetail] = useState<AreaDetail | null>(null)
+  const [nationalDetail, setNationalDetail] = useState<AreaDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +119,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         setManifest(man)
         setNameIndex(index)
+        setNationalDetail(national)
         areaCacheRef.current.set(national.name, national)
         setSelectedDetail(national)
         setSelectedArea(man.nationalKey || NATIONAL_KEY)
@@ -238,6 +241,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     error,
     ensureMetrics,
     nationalKey: manifest?.nationalKey ?? NATIONAL_KEY,
+    nationalDetail,
     manifest,
     selectedDetail,
     regionData,

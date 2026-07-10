@@ -62,24 +62,33 @@ export function europeanFillColor(percentage?: number): string {
     return '#888'
   }
 
-  // 100% = dark blue, 75% = medium blue, 50% = light blue
-  if (percentage >= 50) {
-    const t = (percentage - 50) / 50
-    if (t < 0.5) {
-      const u = t / 0.5
-      return `rgb(${Math.round(120 + u * -90)}, ${Math.round(180 + u * -80)}, ${Math.round(240 + u * -40)})`
+  const value = Math.max(0, Math.min(100, percentage))
+  const stops = [
+    { pct: 0, color: [140, 81, 10] },
+    { pct: 25, color: [216, 179, 101] },
+    { pct: 50, color: [246, 232, 170] },
+    { pct: 75, color: [116, 173, 209] },
+    { pct: 100, color: [33, 102, 172] },
+  ] as const
+
+  for (let index = 1; index < stops.length; index++) {
+    const start = stops[index - 1]
+    const end = stops[index]
+    if (value <= end.pct) {
+      const t = (value - start.pct) / (end.pct - start.pct)
+      return interpolateRgb(start.color, end.color, t)
     }
-    const u = (t - 0.5) / 0.5
-    return `rgb(${Math.round(30 + u * -20)}, ${Math.round(100 + u * -70)}, ${Math.round(200 + u * -80)})`
   }
 
-  // 50% = light blue, 25% = warm orange, 0% = amber/tan
-  if (percentage >= 25) {
-    const t = (percentage - 25) / 25
-    return `rgb(${Math.round(245 + t * -125)}, ${Math.round(140 + t * 40)}, ${Math.round(80 + t * 160)})`
-  }
-  const t = percentage / 25
-  return `rgb(${Math.round(200 + t * 45)}, ${Math.round(120 + t * 20)}, ${Math.round(70 + t * 10)})`
+  return interpolateRgb(stops[stops.length - 1].color, stops[stops.length - 1].color, 0)
+}
+
+function interpolateRgb(
+  start: readonly [number, number, number],
+  end: readonly [number, number, number],
+  t: number,
+) {
+  return `rgb(${start.map((channel, index) => Math.round(channel + (end[index] - channel) * t)).join(', ')})`
 }
 
 export function getValue(data: EthnicityCounts | undefined, key: string): number {

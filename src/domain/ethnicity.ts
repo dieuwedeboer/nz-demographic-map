@@ -10,7 +10,7 @@ interface CategoryDef {
 
 const CATEGORIES: CategoryDef[] = [
   {
-    name: 'NZ European',
+    name: 'European',
     key: 'European only',
     children: [
       'New Zealander',
@@ -25,8 +25,8 @@ const CATEGORIES: CategoryDef[] = [
       'Other European',
     ],
   },
-  { name: 'NZ European Maori', key: 'European/Māori', children: [] },
-  { name: 'NZ Maori', key: 'Māori only', children: [] },
+  { name: 'European Maori', key: 'European/Māori', children: [] },
+  { name: 'Maori', key: 'Māori only', children: [] },
   {
     name: 'Pacific Islander',
     key: 'Pacific Peoples only',

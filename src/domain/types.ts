@@ -58,9 +58,9 @@ export const TA_ZOOM_THRESHOLD = 8
 export const SA2_ZOOM_THRESHOLD = 11
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'NZ European': '#3b82f6',
-  'NZ European Maori': '#8b5cf6',
-  'NZ Maori': '#ef4444',
+  European: '#3b82f6',
+  'European Maori': '#8b5cf6',
+  Maori: '#ef4444',
   'Pacific Islander': '#f59e0b',
   Asian: '#10b981',
   'MELAA & Other': '#6b7280',

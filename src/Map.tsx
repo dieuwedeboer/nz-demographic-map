@@ -17,11 +17,16 @@ import { assetUrl } from './lib/paths'
 import MapLegend from './MapLegend'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
-// Wide enough for all of NZ including Chathams when zoomed out
-const NZ_BOUNDS: [[number, number], [number, number]] = [
+// Wide enough for all of NZ including Chathams when fitting the national view.
+const NZ_FIT_BOUNDS: [[number, number], [number, number]] = [
   [160.0, -50.0],
   [185.0, -32.0],
 ]
+const NZ_NAVIGATION_BOUNDS: [[number, number], [number, number]] = [
+  [130.0, -65.0],
+  [210.0, -15.0],
+]
+const NZ_FIT_PADDING = 32
 const GEOGRAPHY_TIERS: GeographyTier[] = ['rc', 'ta', 'sa2']
 const BORDER_COLOR = '#2f2f2f'
 const SELECTED_DOT_SPACING = 7
@@ -54,6 +59,13 @@ function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
       },
     })
   }
+}
+
+function fitNzBounds(map: maplibregl.Map, duration = 0) {
+  map.fitBounds(NZ_FIT_BOUNDS, {
+    padding: NZ_FIT_PADDING,
+    duration,
+  })
 }
 
 function borderLineWidth(tier: GeographyTier): maplibregl.ExpressionSpecification {
@@ -444,8 +456,8 @@ function MapView() {
       },
       center: NZ_CENTER,
       zoom: 5,
-      maxBounds: NZ_BOUNDS,
-      minZoom: 2,
+      maxBounds: NZ_NAVIGATION_BOUNDS,
+      minZoom: 1,
       maxZoom: 14,
       attributionControl: false,
       fadeDuration: 0,
@@ -454,6 +466,7 @@ function MapView() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
 
     map.on('load', () => {
+      fitNzBounds(map)
       setMapReady(true)
       setZoomLevel(map.getZoom())
     })
@@ -586,6 +599,33 @@ function MapView() {
 
   useEffect(() => {
     const map = mapRef.current
+    const container = containerRef.current
+    if (!map || !container || !mapReady) return
+
+    let frame = 0
+    const resize = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        map.resize()
+        const canvas = selectedCanvasRef.current
+        if (canvas) drawSelectedHatch(map, canvas, selectedFeature)
+      })
+    }
+
+    const observer = new ResizeObserver(resize)
+    observer.observe(container)
+    window.addEventListener('resize', resize)
+    resize()
+
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('resize', resize)
+    }
+  }, [mapReady, selectedFeature])
+
+  useEffect(() => {
+    const map = mapRef.current
     const canvas = selectedCanvasRef.current
     if (!map || !canvas || !mapReady) return
 
@@ -640,18 +680,20 @@ function MapView() {
 
   return (
     <>
-      <div ref={containerRef} style={{ height: '100vh', width: '100%' }} />
-      <canvas
-        ref={selectedCanvasRef}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100vh',
-          pointerEvents: 'none',
-          zIndex: 1,
-        }}
-      />
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
+        <canvas
+          ref={selectedCanvasRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      </div>
       <AreaSearch onSelect={flyToSearch} disabled={loading} />
       <ControlPanel
         availableYears={availableYears}

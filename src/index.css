@@ -446,6 +446,27 @@ body {
   left: 10px;
 }
 
+.area-hover-popup {
+  z-index: 1001;
+}
+
+.area-hover-popup .maplibregl-popup-content {
+  padding: 6px 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--control-text);
+  box-shadow: 0 4px 12px var(--shadow);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.area-hover-popup .maplibregl-popup-tip {
+  display: none;
+}
+
 .map-legend {
   position: absolute;
   bottom: 20px;

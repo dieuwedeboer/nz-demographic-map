@@ -5,8 +5,9 @@ import AreaSearch, { type SearchHit } from './AreaSearch'
 import ControlPanel from './ControlPanel'
 import { useData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
-import { europeanFillColor, getEuropeanData } from './domain/geo'
+import { ageGroupSlug, europeanFillColor, getEuropeanData } from './domain/geo'
 import {
+  type AgeGroup,
   type GeographyTier,
   NATIONAL_KEY,
   SA2_ZOOM_THRESHOLD,
@@ -16,6 +17,7 @@ import {
 import InfoPanel from './InfoPanel'
 import { assetUrl } from './lib/paths'
 import MapLegend from './MapLegend'
+import { resolveIndexEntry } from './services/dataLoader'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
 // Wide enough for all of NZ including Chathams when fitting the national view.
@@ -29,6 +31,9 @@ const NZ_NAVIGATION_BOUNDS: [[number, number], [number, number]] = [
 ]
 const NZ_FIT_PADDING = 32
 const GEOGRAPHY_TIERS: GeographyTier[] = ['rc', 'ta', 'sa2']
+const AREA_QUERY_PARAM = 'area'
+const YEAR_QUERY_PARAM = 'year'
+const AGE_QUERY_PARAM = 'age'
 const BORDER_COLOR = '#2f2f2f'
 const SELECTED_DOT_SPACING = 7
 const SELECTED_DOT_RADIUS = 1
@@ -323,6 +328,52 @@ function activeGeographyTier(
   return null
 }
 
+function isGeographyTier(value: string): value is GeographyTier {
+  return value === 'rc' || value === 'ta' || value === 'sa2'
+}
+
+function zoomForTier(tier: GeographyTier) {
+  if (tier === 'rc') return Math.max(5, TA_ZOOM_THRESHOLD - 1)
+  if (tier === 'ta') return (TA_ZOOM_THRESHOLD + SA2_ZOOM_THRESHOLD) / 2
+  return SA2_ZOOM_THRESHOLD + 2
+}
+
+function setShareUrlParams({
+  slug,
+  year,
+  ageGroup,
+  mode = 'push',
+}: {
+  slug: string | null
+  year: string
+  ageGroup: string
+  mode?: 'push' | 'replace'
+}) {
+  if (typeof window === 'undefined') return
+
+  const url = new URL(window.location.href)
+  if (slug) url.searchParams.set(AREA_QUERY_PARAM, slug)
+  else url.searchParams.delete(AREA_QUERY_PARAM)
+  if (year) url.searchParams.set(YEAR_QUERY_PARAM, year)
+  if (ageGroup) url.searchParams.set(AGE_QUERY_PARAM, ageGroupSlug(ageGroup))
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  if (nextUrl === currentUrl) return
+
+  window.history[mode === 'replace' ? 'replaceState' : 'pushState']({}, '', nextUrl)
+}
+
+function getUrlSearchParams() {
+  if (typeof window === 'undefined') return new URLSearchParams()
+  return new URLSearchParams(window.location.search)
+}
+
+function ageGroupFromSlug(slug: string | null, availableAgeGroups: AgeGroup[]) {
+  if (!slug) return null
+  return availableAgeGroups.find((ageGroup) => ageGroupSlug(ageGroup) === slug) ?? null
+}
+
 function MapView() {
   const {
     selectedArea,
@@ -339,6 +390,7 @@ function MapView() {
     ensureMetrics,
     nationalKey,
     nationalDetail,
+    nameIndex,
     detailLoading,
   } = useData()
   const { theme } = useTheme()
@@ -346,6 +398,11 @@ function MapView() {
   const containerRef = useRef<HTMLDivElement>(null)
   const selectedCanvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const nameIndexRef = useRef(nameIndex)
+  const selectedYearRef = useRef(selectedYear)
+  const selectedAgeGroupRef = useRef(selectedAgeGroup)
+  const ensureMetricsRef = useRef(ensureMetrics)
+  const appliedAreaSlugRef = useRef<string | null>(null)
   const [zoomLevel, setZoomLevel] = useState(6)
   const [mapReady, setMapReady] = useState(false)
   const [selectedFeature, setSelectedFeature] = useState<BoundaryFeature | null>(null)
@@ -358,6 +415,95 @@ function MapView() {
     showTerritorialAuthorities,
     showSA2,
   )
+
+  useEffect(() => {
+    nameIndexRef.current = nameIndex
+  }, [nameIndex])
+
+  useEffect(() => {
+    selectedYearRef.current = selectedYear
+  }, [selectedYear])
+
+  useEffect(() => {
+    selectedAgeGroupRef.current = selectedAgeGroup
+  }, [selectedAgeGroup])
+
+  useEffect(() => {
+    ensureMetricsRef.current = ensureMetrics
+  }, [ensureMetrics])
+
+  useEffect(() => {
+    if (!mapReady || nameIndex.size === 0) return
+
+    const applyAreaFromUrl = () => {
+      const searchParams = getUrlSearchParams()
+      const slug = searchParams.get(AREA_QUERY_PARAM)
+      const year = searchParams.get(YEAR_QUERY_PARAM)
+      const ageGroup = ageGroupFromSlug(searchParams.get(AGE_QUERY_PARAM), availableAgeGroups)
+      const map = mapRef.current
+      const nextYear = year && availableYears.includes(year) ? year : selectedYearRef.current
+      const nextAgeGroup = ageGroup ?? selectedAgeGroupRef.current
+
+      if (nextYear !== selectedYearRef.current) {
+        selectedYearRef.current = nextYear
+        setSelectedYear(nextYear)
+      }
+      if (nextAgeGroup !== selectedAgeGroupRef.current) {
+        selectedAgeGroupRef.current = nextAgeGroup
+        setSelectedAgeGroup(nextAgeGroup)
+      }
+
+      if (!slug) {
+        appliedAreaSlugRef.current = null
+        setSelectedArea(nationalKey)
+        if (map) fitNzBounds(map)
+        return
+      }
+
+      if (appliedAreaSlugRef.current === slug) return
+
+      const entry = [...nameIndex.values()].find((item) => item.slug === slug)
+      if (!entry || !isGeographyTier(entry.tier)) return
+
+      appliedAreaSlugRef.current = slug
+      void ensureMetricsRef.current([entry.tier], nextYear, nextAgeGroup)
+      setSelectedArea(entry.name)
+      if (map && entry.center) {
+        const zoom = zoomForTier(entry.tier)
+        setZoomLevel(zoom)
+        map.jumpTo({
+          center: entry.center,
+          zoom,
+        })
+      }
+    }
+
+    applyAreaFromUrl()
+    window.addEventListener('popstate', applyAreaFromUrl)
+    return () => {
+      window.removeEventListener('popstate', applyAreaFromUrl)
+    }
+  }, [
+    availableAgeGroups,
+    availableYears,
+    mapReady,
+    nameIndex,
+    nationalKey,
+    setSelectedAgeGroup,
+    setSelectedArea,
+    setSelectedYear,
+  ])
+
+  useEffect(() => {
+    const slug = getUrlSearchParams().get(AREA_QUERY_PARAM)
+    if (!slug) return
+    setShareUrlParams({
+      slug,
+      year: selectedYear,
+      ageGroup: selectedAgeGroup,
+      mode: 'replace',
+    })
+  }, [selectedAgeGroup, selectedYear])
 
   // Init map
   useEffect(() => {
@@ -507,6 +653,11 @@ function MapView() {
       const name = features[0]?.properties?.[nameProp]
       if (typeof name === 'string' && name) {
         setSelectedArea(name)
+        setShareUrlParams({
+          slug: resolveIndexEntry(nameIndexRef.current, name)?.slug ?? null,
+          year: selectedYearRef.current,
+          ageGroup: selectedAgeGroupRef.current,
+        })
       }
       leaveHandler()
     }
@@ -544,6 +695,11 @@ function MapView() {
     map.on('click', 'sa2-fill', clickHandler('sa2'))
     map.on('click', 'national-fill', () => {
       setSelectedArea(nationalKey)
+      setShareUrlParams({
+        slug: null,
+        year: selectedYearRef.current,
+        ageGroup: selectedAgeGroupRef.current,
+      })
       leaveHandler()
     })
 
@@ -702,6 +858,7 @@ function MapView() {
 
   const flyToSearch = (hit: SearchHit, zoom: number) => {
     setSelectedArea(hit.name)
+    setShareUrlParams({ slug: hit.slug, year: selectedYear, ageGroup: selectedAgeGroup })
     const map = mapRef.current
     if (!map || !hit.center) return
     map.flyTo({

@@ -71,6 +71,7 @@ function ControlPanel({
               <span>Year</span>
               <select
                 id="year-selector"
+                name="year"
                 value={selectedYear}
                 onChange={(e) => onYearChange(e.target.value)}
                 disabled={disabled}
@@ -88,6 +89,7 @@ function ControlPanel({
             <span>Age</span>
             <select
               id="age-group-selector"
+              name="age-group"
               value={selectedAgeGroup}
               onChange={(e) => onAgeGroupChange(e.target.value as AgeGroup)}
               disabled={disabled}
@@ -109,6 +111,7 @@ function ControlPanel({
             <label key={layer.id} className="layer-toggle" htmlFor={layer.id}>
               <input
                 id={layer.id}
+                name={layer.id}
                 type="checkbox"
                 checked={layer.checked}
                 onChange={(e) => layer.onChange(e.target.checked)}

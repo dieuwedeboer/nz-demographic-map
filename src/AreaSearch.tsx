@@ -130,6 +130,8 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
     <div className="area-search" ref={wrapRef}>
       <input
         ref={inputRef}
+        id="area-search"
+        name="area-search"
         type="search"
         className="area-search-input"
         placeholder="Search place or suburb…"

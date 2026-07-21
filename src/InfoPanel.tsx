@@ -138,7 +138,11 @@ function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean
   )
 }
 
-function AgeBreakdown({ yearData }: { yearData: Record<string, Record<string, number>> | undefined }) {
+function AgeBreakdown({
+  yearData,
+}: {
+  yearData: Record<string, Record<string, number>> | undefined
+}) {
   if (!yearData) return null
 
   const rows = AGE_GROUPS.filter(

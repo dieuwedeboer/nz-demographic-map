@@ -48,6 +48,31 @@ function hasFineHoverPointer() {
   )
 }
 
+function ensureFillLayer(map: maplibregl.Map, tier: GeographyTier) {
+  const sourceId = tier
+  const layerId = `${tier}-fill`
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: assetUrl(`tiles/${tier}-fills.geojson`),
+      buffer: 512,
+      tolerance: 0,
+      generateId: true,
+    })
+  }
+  if (!map.getLayer(layerId)) {
+    map.addLayer({
+      id: layerId,
+      type: 'fill',
+      source: sourceId,
+      paint: {
+        'fill-color': hoverColorExpression('#888'),
+        'fill-antialias': false,
+      },
+    })
+  }
+}
+
 function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
   const sourceId = `${tier}-borders`
   const layerId = `${tier}-border`
@@ -69,12 +94,45 @@ function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
         'line-width': borderLineWidth(tier),
       },
       layout: {
-        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
     })
   }
+}
+
+function ensureTierLayers(map: maplibregl.Map, tier: GeographyTier) {
+  ensureFillLayer(map, tier)
+  ensureBorderLayer(map, tier)
+}
+
+function removeLayerIfPresent(map: maplibregl.Map, layerId: string) {
+  if (map.getLayer(layerId)) map.removeLayer(layerId)
+}
+
+function removeSourceIfPresent(map: maplibregl.Map, sourceId: string) {
+  if (map.getSource(sourceId)) map.removeSource(sourceId)
+}
+
+function removeTierLayers(map: maplibregl.Map, tier: GeographyTier) {
+  removeLayerIfPresent(map, `${tier}-border`)
+  removeLayerIfPresent(map, `${tier}-fill`)
+  removeSourceIfPresent(map, `${tier}-borders`)
+  removeSourceIfPresent(map, tier)
+}
+
+function loadedFillLayers(map: maplibregl.Map) {
+  return ['national-fill', 'rc-fill', 'ta-fill', 'sa2-fill'].filter((layerId) =>
+    map.getLayer(layerId),
+  )
+}
+
+function tierFromFillLayer(layerId: string): GeographyTier | 'national' | null {
+  if (layerId === 'national-fill') return 'national'
+  if (layerId === 'rc-fill') return 'rc'
+  if (layerId === 'ta-fill') return 'ta'
+  if (layerId === 'sa2-fill') return 'sa2'
+  return null
 }
 
 function fitNzBounds(map: maplibregl.Map, duration = 0) {
@@ -527,27 +585,6 @@ function MapView() {
             buffer: 512,
             tolerance: 0,
           },
-          rc: {
-            type: 'geojson',
-            data: assetUrl('tiles/rc-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
-          ta: {
-            type: 'geojson',
-            data: assetUrl('tiles/ta-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
-          sa2: {
-            type: 'geojson',
-            data: assetUrl('tiles/sa2-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
         },
         layers: [
           {
@@ -580,35 +617,6 @@ function MapView() {
               'line-cap': 'round',
               'line-join': 'round',
             },
-          },
-          {
-            id: 'rc-fill',
-            type: 'fill',
-            source: 'rc',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-          },
-          {
-            id: 'ta-fill',
-            type: 'fill',
-            source: 'ta',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-            layout: { visibility: 'none' },
-          },
-          {
-            id: 'sa2-fill',
-            type: 'fill',
-            source: 'sa2',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-            layout: { visibility: 'none' },
           },
         ],
       },
@@ -645,12 +653,26 @@ function MapView() {
     const clearHoverOnTouch = (_event: TouchEvent) => {
       leaveHandler()
     }
-    const clickHandler = (tier: GeographyTier) => (e: maplibregl.MapMouseEvent) => {
+    const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      const layers = loadedFillLayers(map)
+      if (layers.length === 0) return
+      const features = map.queryRenderedFeatures(e.point, { layers })
+      const feature = features[0]
+      const tier = tierFromFillLayer(feature?.layer.id ?? '')
+      if (tier === 'national') {
+        setSelectedArea(nationalKey)
+        setShareUrlParams({
+          slug: null,
+          year: selectedYearRef.current,
+          ageGroup: selectedAgeGroupRef.current,
+        })
+        leaveHandler()
+        return
+      }
+      if (!tier) return
+
       const nameProp = TILE_SOURCES[tier].nameProp
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: [`${tier}-fill`],
-      })
-      const name = features[0]?.properties?.[nameProp]
+      const name = feature?.properties?.[nameProp]
       if (typeof name === 'string' && name) {
         setSelectedArea(name)
         setShareUrlParams({
@@ -661,59 +683,56 @@ function MapView() {
       }
       leaveHandler()
     }
-    const hoverHandler =
-      (source: string, nameProp: string) => (e: maplibregl.MapLayerMouseEvent) => {
-        if (!hasFineHoverPointer()) {
-          leaveHandler()
-          return
-        }
-
-        const feature = e.features?.[0]
-        const name = feature?.properties?.[nameProp]
-        if (typeof name !== 'string' || !name) return
-        if (feature.id === undefined || feature.id === null) {
-          hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
-          return
-        }
-
-        const nextHoveredFeature = { source, id: feature.id }
-        if (
-          hoveredFeature?.source === nextHoveredFeature.source &&
-          hoveredFeature.id === nextHoveredFeature.id
-        ) {
-          return
-        }
-
-        clearHoveredFeature(map, hoveredFeature)
-        hoveredFeature = nextHoveredFeature
-        map.setFeatureState(hoveredFeature, { hover: true })
-        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+    const hoverHandler = (e: maplibregl.MapMouseEvent) => {
+      if (!hasFineHoverPointer()) {
+        leaveHandler()
+        return
       }
 
-    map.on('click', 'rc-fill', clickHandler('rc'))
-    map.on('click', 'ta-fill', clickHandler('ta'))
-    map.on('click', 'sa2-fill', clickHandler('sa2'))
-    map.on('click', 'national-fill', () => {
-      setSelectedArea(nationalKey)
-      setShareUrlParams({
-        slug: null,
-        year: selectedYearRef.current,
-        ageGroup: selectedAgeGroupRef.current,
-      })
-      leaveHandler()
-    })
+      const layers = loadedFillLayers(map)
+      if (layers.length === 0) {
+        leaveHandler()
+        return
+      }
+      const features = map.queryRenderedFeatures(e.point, { layers })
+      const feature = features[0]
+      const tier = tierFromFillLayer(feature?.layer.id ?? '')
+      if (!tier || !feature) {
+        leaveHandler()
+        return
+      }
 
-    map.on('mousemove', 'national-fill', hoverHandler('national', 'name'))
-    map.on('mousemove', 'rc-fill', hoverHandler('rc', TILE_SOURCES.rc.nameProp))
-    map.on('mousemove', 'ta-fill', hoverHandler('ta', TILE_SOURCES.ta.nameProp))
-    map.on('mousemove', 'sa2-fill', hoverHandler('sa2', TILE_SOURCES.sa2.nameProp))
+      const nameProp = tier === 'national' ? 'name' : TILE_SOURCES[tier].nameProp
+      const name = feature.properties?.[nameProp]
+      if (typeof name !== 'string' || !name) {
+        leaveHandler()
+        return
+      }
 
-    for (const layer of ['national-fill', 'rc-fill', 'ta-fill', 'sa2-fill']) {
-      map.on('mouseenter', layer, () => {
-        map.getCanvas().style.cursor = 'pointer'
-      })
-      map.on('mouseleave', layer, leaveHandler)
+      map.getCanvas().style.cursor = 'pointer'
+      if (feature.id === undefined || feature.id === null) {
+        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+        return
+      }
+
+      const nextHoveredFeature = { source: feature.source, id: feature.id }
+      if (
+        hoveredFeature?.source === nextHoveredFeature.source &&
+        hoveredFeature.id === nextHoveredFeature.id
+      ) {
+        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+        return
+      }
+
+      clearHoveredFeature(map, hoveredFeature)
+      hoveredFeature = nextHoveredFeature
+      map.setFeatureState(hoveredFeature, { hover: true })
+      hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
     }
+
+    map.on('click', clickHandler)
+    map.on('mousemove', hoverHandler)
+    map.on('mouseout', leaveHandler)
 
     const canvas = map.getCanvas()
     canvas.addEventListener('touchend', clearHoverOnTouch)
@@ -723,6 +742,9 @@ function MapView() {
     return () => {
       canvas.removeEventListener('touchend', clearHoverOnTouch)
       canvas.removeEventListener('touchcancel', clearHoverOnTouch)
+      map.off('click', clickHandler)
+      map.off('mousemove', hoverHandler)
+      map.off('mouseout', leaveHandler)
       hoverPopup.remove()
       map.remove()
       mapRef.current = null
@@ -758,7 +780,7 @@ function MapView() {
     }
   }, [activeTier, selectedArea, nationalKey])
 
-  // Layer visibility by zoom + toggles
+  // Keep only the active geography sources loaded (avoids fetching SA2 fills until needed).
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
@@ -766,18 +788,19 @@ function MapView() {
     const showNational = !showRegionalCouncils && !showTerritorialAuthorities && !showSA2
     const active = activeTier
 
-    if (active) ensureBorderLayer(map, active)
-
     if (map.getLayer('national-fill')) {
       map.setLayoutProperty('national-fill', 'visibility', showNational ? 'visible' : 'none')
     }
     if (map.getLayer('national-border')) {
       map.setLayoutProperty('national-border', 'visibility', showNational ? 'visible' : 'none')
     }
+
     for (const tier of GEOGRAPHY_TIERS) {
-      const vis = active === tier ? 'visible' : 'none'
-      if (map.getLayer(`${tier}-fill`)) map.setLayoutProperty(`${tier}-fill`, 'visibility', vis)
-      if (map.getLayer(`${tier}-border`)) map.setLayoutProperty(`${tier}-border`, 'visibility', vis)
+      if (active === tier) {
+        ensureTierLayers(map, tier)
+      } else {
+        removeTierLayers(map, tier)
+      }
     }
   }, [activeTier, showRegionalCouncils, showTerritorialAuthorities, showSA2, mapReady])
 

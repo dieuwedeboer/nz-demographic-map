@@ -441,21 +441,23 @@ function InfoPanel({ controls }: InfoPanelProps) {
           </div>
           {item.isExpandable &&
             expandedCategories.has(item.name) &&
-            (item.children ?? [])
-              .map((childName) => ({
+            (
+              item.breakdown ??
+              (item.children ?? []).map((childName) => ({
                 name: childName,
-                data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
+                value: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
               }))
-              .sort((a, b) => b.data - a.data)
+            )
+              .sort((a, b) => b.value - a.value)
               .map((child) => {
-                const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'
+                const childPct = total > 0 ? ((child.value / total) * 100).toFixed(1) : '0.0'
                 return (
                   <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
                     <span className="info-label child">
                       <span className="expand-icon-placeholder" />
                       <span>{child.name}</span>
                     </span>
-                    <span className="info-value">{child.data.toLocaleString()}</span>
+                    <span className="info-value">{child.value.toLocaleString()}</span>
                     <span className="info-pct">({childPct}%)</span>
                   </div>
                 )

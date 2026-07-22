@@ -68,8 +68,8 @@ export const CATEGORY_COLORS: Record<string, string> = {
   European: '#3b82f6',
   'European/Maori': '#8b5cf6',
   Maori: '#ef4444',
-  'Pacific Islander': '#f59e0b',
-  Asian: '#10b981',
+  'Pacific Islander': '#10b981',
+  Asian: '#f59e0b',
   'MELAA & Other': '#6b7280',
   'Other Mixed': '#ec4899',
 }

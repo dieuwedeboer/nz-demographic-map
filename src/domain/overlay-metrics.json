@@ -70,7 +70,7 @@
       "parentId": null,
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "pacific",
@@ -81,7 +81,7 @@
       "parentId": null,
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "melaa",
@@ -103,7 +103,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "indian",
@@ -114,7 +114,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "filipino",
@@ -125,7 +125,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "japanese",
@@ -136,7 +136,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "korean",
@@ -147,7 +147,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "sri-lankan",
@@ -158,7 +158,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "vietnamese",
@@ -169,7 +169,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "cambodian",
@@ -180,7 +180,7 @@
       "parentId": "asian",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#10b981"
+      "accent": "#f59e0b"
     },
     {
       "id": "samoan",
@@ -191,7 +191,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "cook-islands-maori",
@@ -202,7 +202,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "tongan",
@@ -213,7 +213,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "niuean",
@@ -224,7 +224,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "tokelauan",
@@ -235,7 +235,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "fijian",
@@ -246,7 +246,7 @@
       "parentId": "pacific",
       "palette": "monochrome",
       "scale": "data-max",
-      "accent": "#f59e0b"
+      "accent": "#10b981"
     },
     {
       "id": "middle-eastern",

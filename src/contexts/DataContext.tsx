@@ -34,9 +34,19 @@ import {
   resolveIndexEntry,
 } from '../services/dataLoader'
 
+function isGeographyTier(value: string | undefined | null): value is GeographyTier {
+  return value === 'rc' || value === 'ta' || value === 'sa2'
+}
+
 interface DataContextType {
   selectedArea: string
-  setSelectedArea: (area: string) => void
+  /**
+   * Select an area. Pass `tier` when known (map click, search, URL) so display
+   * labels like "Auckland Region" work. Omit to infer from name index.
+   */
+  setSelectedArea: (area: string, tier?: GeographyTier | null) => void
+  /** Geography tier for the current selection; null at national view. */
+  selectedTier: GeographyTier | null
   selectedYear: string
   setSelectedYear: (year: string) => void
   selectedAgeGroup: AgeGroup
@@ -91,7 +101,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [nameIndex, setNameIndex] = useState<Map<string, NameIndexEntry>>(new Map())
   const [manifest, setManifest] = useState<DataManifest | null>(null)
-  const [selectedArea, setSelectedArea] = useState(NATIONAL_KEY)
+  const [selectedArea, setSelectedAreaState] = useState(NATIONAL_KEY)
+  const [selectedTier, setSelectedTier] = useState<GeographyTier | null>(null)
   const [selectedYear, setSelectedYear] = useState(initialUrlYear || '2023')
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>(
     initialAgeGroup || 'Total - age',
@@ -108,6 +119,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const setSelectedOverlayId = useCallback((overlayId: string) => {
     setOverlaySelectionState((prev) => selectionFromMetricId(overlayId, prev))
   }, [])
+
+  const setSelectedArea = useCallback(
+    (area: string, tier?: GeographyTier | null) => {
+      setSelectedAreaState(area)
+      if (tier !== undefined) {
+        setSelectedTier(tier)
+        return
+      }
+      const entry = resolveIndexEntry(nameIndex, area)
+      setSelectedTier(isGeographyTier(entry?.tier) ? entry.tier : null)
+    },
+    [nameIndex],
+  )
 
   const [selectedDetail, setSelectedDetail] = useState<AreaDetail | null>(null)
   const [nationalDetail, setNationalDetail] = useState<AreaDetail | null>(null)
@@ -166,7 +190,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setNationalDetail(national)
         areaCacheRef.current.set(national.name, national)
         setSelectedDetail(national)
-        setSelectedArea(man.nationalKey || NATIONAL_KEY)
+        setSelectedAreaState(man.nationalKey || NATIONAL_KEY)
+        setSelectedTier(null)
         const urlAgeGroup = ageGroupFromSlug(
           initialUrlAge,
           (man.ageGroups as AgeGroup[]) ?? AGE_GROUPS,
@@ -278,6 +303,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextType = {
     selectedArea,
     setSelectedArea,
+    selectedTier,
     selectedYear,
     setSelectedYear,
     selectedAgeGroup,

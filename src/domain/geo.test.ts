@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   ageGroupSlug,
+  areaNameOfficialNote,
   buildNameIndex,
+  displayAreaName,
   findRegionData,
   normalizeName,
   tierForZoom,
@@ -29,6 +31,34 @@ describe('normalizeName', () => {
   it('strips diacritics and lowercases', () => {
     expect(normalizeName('Māori')).toBe('maori')
     expect(normalizeName('Auckland Region')).toBe('auckland region')
+  })
+})
+
+describe('displayAreaName', () => {
+  it('renames residual geographies and national total', () => {
+    expect(displayAreaName('Total - New Zealand by regional council')).toBe('New Zealand')
+    expect(displayAreaName('Area Outside Territorial Authority')).toBe('Remote Islands')
+    expect(displayAreaName('Area Outside Region')).toBe('Islands Outside Region')
+  })
+
+  it('shows Auckland Region only at RC tier', () => {
+    expect(displayAreaName('Auckland', 'rc')).toBe('Auckland Region')
+    expect(displayAreaName('Auckland', 'ta')).toBe('Auckland')
+    expect(displayAreaName('Auckland')).toBe('Auckland')
+  })
+
+  it('leaves other names unchanged', () => {
+    expect(displayAreaName('Northland Region', 'rc')).toBe('Northland Region')
+  })
+})
+
+describe('areaNameOfficialNote', () => {
+  it('returns Stats name when display differs', () => {
+    expect(areaNameOfficialNote('Area Outside Territorial Authority')).toBe(
+      'Area Outside Territorial Authority',
+    )
+    expect(areaNameOfficialNote('Auckland', 'rc')).toMatch(/Auckland/)
+    expect(areaNameOfficialNote('Auckland', 'ta')).toBeNull()
   })
 })
 

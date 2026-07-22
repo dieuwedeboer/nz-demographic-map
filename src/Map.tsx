@@ -7,6 +7,7 @@ import { useData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { getOverlayMetric, getOverlayMetricData } from './domain/overlay'
 import { overlayFillColor, overlayScaleDomain } from './domain/overlayColour'
+import { displayAreaName } from './domain/geo'
 import { type GeographyTier, NATIONAL_KEY, TILE_SOURCES } from './domain/types'
 import InfoPanel from './InfoPanel'
 import { assetUrl } from './lib/paths'
@@ -184,7 +185,7 @@ function MapView() {
 
       if (!slug) {
         appliedAreaSlugRef.current = null
-        setSelectedArea(nationalKey)
+        setSelectedArea(nationalKey, null)
         if (map) fitNzBounds(map)
         return
       }
@@ -196,7 +197,7 @@ function MapView() {
 
       appliedAreaSlugRef.current = slug
       void ensureMetricsRef.current([entry.tier], nextYear, nextAgeGroup)
-      setSelectedArea(entry.name)
+      setSelectedArea(entry.name, entry.tier)
       if (map && entry.center) {
         const zoom = zoomForTier(entry.tier)
         setZoomLevel(zoom)
@@ -332,7 +333,7 @@ function MapView() {
       const feature = features[0]
       const tier = tierFromFillLayer(feature?.layer.id ?? '')
       if (tier === 'national') {
-        setSelectedArea(nationalKey)
+        setSelectedArea(nationalKey, null)
         setShareUrlParams({
           slug: null,
           year: selectedYearRef.current,
@@ -347,7 +348,7 @@ function MapView() {
       const nameProp = TILE_SOURCES[tier].nameProp
       const name = feature?.properties?.[nameProp]
       if (typeof name === 'string' && name) {
-        setSelectedArea(name)
+        setSelectedArea(name, tier)
         setShareUrlParams({
           slug: resolveIndexEntry(nameIndexRef.current, name)?.slug ?? null,
           year: selectedYearRef.current,
@@ -383,9 +384,10 @@ function MapView() {
         return
       }
 
+      const label = displayAreaName(name, tier === 'national' ? null : tier)
       map.getCanvas().style.cursor = 'pointer'
       if (feature.id === undefined || feature.id === null) {
-        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+        hoverPopup.setLngLat(e.lngLat).setText(label).addTo(map)
         return
       }
 
@@ -394,7 +396,7 @@ function MapView() {
         hoveredFeature?.source === nextHoveredFeature.source &&
         hoveredFeature.id === nextHoveredFeature.id
       ) {
-        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+        hoverPopup.setLngLat(e.lngLat).setText(label).addTo(map)
         return
       }
 
@@ -403,7 +405,7 @@ function MapView() {
       if (map.getSource(hoveredFeature.source)) {
         map.setFeatureState(hoveredFeature, { hover: true })
       }
-      hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+      hoverPopup.setLngLat(e.lngLat).setText(label).addTo(map)
     }
 
     map.on('click', clickHandler)
@@ -581,7 +583,7 @@ function MapView() {
   ])
 
   const flyToSearch = (hit: SearchHit, zoom: number) => {
-    setSelectedArea(hit.name)
+    setSelectedArea(hit.name, hit.tier)
     setShareUrlParams({
       slug: hit.slug,
       year: selectedYear,

@@ -11,6 +11,7 @@ import {
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
+import { areaNameOfficialNote, displayAreaName } from './domain/geo'
 import { type PieDetailHighlight, pieDetailHighlightForOverlay } from './domain/overlay'
 import { overlayDetailAccentColor } from './domain/overlayColour'
 import {
@@ -294,6 +295,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
   const isDark = theme === 'dark'
   const {
     selectedArea,
+    selectedTier,
     selectedYear,
     selectedAgeGroup,
     selectedOverlayId,
@@ -301,6 +303,8 @@ function InfoPanel({ controls }: InfoPanelProps) {
     detailLoading,
     nameIndex,
   } = useData()
+  const areaLabel = displayAreaName(selectedArea, selectedTier)
+  const areaOfficialNote = areaNameOfficialNote(selectedArea, selectedTier)
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState(() => isMobilePanelViewport())
@@ -365,7 +369,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: selectedArea,
+          title: areaLabel,
           url: shareUrl,
         })
         return
@@ -381,14 +385,14 @@ function InfoPanel({ controls }: InfoPanelProps) {
   const heading = (
     <>
       <div className="info-title-row">
-        <h4>{selectedArea}</h4>
+        <h4 title={areaOfficialNote ?? undefined}>{areaLabel}</h4>
       </div>
       {shareUrl && (
         <button
           type="button"
           className="info-share-button"
           onClick={shareSelectedArea}
-          aria-label={`Share ${selectedArea}`}
+          aria-label={`Share ${areaLabel}`}
           title={shareCopied ? 'Link copied' : 'Copy share link'}
         >
           <svg

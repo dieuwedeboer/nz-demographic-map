@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { ageGroupSlug } from '../domain/geo'
-import { DEFAULT_OVERLAY_ID, getOverlayMetric } from '../domain/overlay'
+import {
+  getOverlayMetric,
+  metricIdFromSelection,
+  type OverlaySelection,
+  selectionFromMetricId,
+} from '../domain/overlay'
 import {
   AGE_GROUPS,
   type AgeGroup,
@@ -11,13 +15,21 @@ import {
   type UnifiedData,
 } from '../domain/types'
 import {
+  AGE_QUERY_PARAM,
+  ageGroupFromSlug,
+  METRIC_QUERY_PARAM,
+  overlayIdFromParam,
+  YEAR_QUERY_PARAM,
+} from '../lib/shareUrl'
+import {
   type AreaDetail,
   type DataManifest,
   loadAreaBySlug,
   loadManifest,
-  loadMetrics,
+  loadMetricsPack,
   loadNameIndex,
   loadNational,
+  type MetricsPack,
   type NameIndexEntry,
   resolveIndexEntry,
 } from '../services/dataLoader'
@@ -29,6 +41,10 @@ interface DataContextType {
   setSelectedYear: (year: string) => void
   selectedAgeGroup: AgeGroup
   setSelectedAgeGroup: (age: AgeGroup) => void
+  /** Canonical map-colour selection (group + detail + include dual). */
+  overlaySelection: OverlaySelection
+  setOverlaySelection: (selection: OverlaySelection) => void
+  /** Derived metric id used for metrics load + share URLs. */
   selectedOverlayId: string
   setSelectedOverlayId: (overlayId: string) => void
   availableYears: string[]
@@ -38,12 +54,7 @@ interface DataContextType {
   loading: boolean
   detailLoading: boolean
   error: string | null
-  ensureMetrics: (
-    tiers: GeographyTier[],
-    year?: string,
-    ageGroup?: AgeGroup,
-    overlayId?: string,
-  ) => Promise<void>
+  ensureMetrics: (tiers: GeographyTier[], year?: string, ageGroup?: AgeGroup) => Promise<void>
   nationalKey: string
   nationalDetail: AreaDetail | null
   manifest: DataManifest | null
@@ -53,27 +64,14 @@ interface DataContextType {
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined)
-const YEAR_QUERY_PARAM = 'year'
-const AGE_QUERY_PARAM = 'age'
-const METRIC_QUERY_PARAM = 'metric'
 
-function metricsKey(tier: GeographyTier, year: string, age: string, overlayId: string) {
-  return `${tier}|${year}|${age}|${overlayId}`
+function packKey(tier: GeographyTier, year: string, age: string) {
+  return `${tier}|${year}|${age}`
 }
 
 function initialSearchParams() {
   if (typeof window === 'undefined') return new URLSearchParams()
   return new URLSearchParams(window.location.search)
-}
-
-function ageGroupFromSlug(slug: string | null, availableAgeGroups: AgeGroup[]) {
-  if (!slug) return null
-  return availableAgeGroups.find((ageGroup) => ageGroupSlug(ageGroup) === slug) ?? null
-}
-
-function overlayIdFromParam(param: string | null) {
-  if (!param) return DEFAULT_OVERLAY_ID
-  return getOverlayMetric(param).id
 }
 
 export function useData() {
@@ -87,8 +85,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const initialUrlAge = useMemo(() => initialSearchParams().get(AGE_QUERY_PARAM), [])
   const initialUrlMetric = useMemo(() => initialSearchParams().get(METRIC_QUERY_PARAM), [])
   const initialAgeGroup = ageGroupFromSlug(initialUrlAge, AGE_GROUPS)
-  const [metricsByKey, setMetricsByKey] = useState<Record<string, Record<string, number>>>({})
-  const metricsLoadedRef = useRef<Set<string>>(new Set())
+  const [metricsPacksByKey, setMetricsPacksByKey] = useState<Record<string, MetricsPack>>({})
+  const packsLoadedRef = useRef<Set<string>>(new Set())
   const areaCacheRef = useRef<Map<string, AreaDetail>>(new Map())
 
   const [nameIndex, setNameIndex] = useState<Map<string, NameIndexEntry>>(new Map())
@@ -98,7 +96,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>(
     initialAgeGroup || 'Total - age',
   )
-  const [selectedOverlayId, setSelectedOverlayId] = useState(overlayIdFromParam(initialUrlMetric))
+  const [overlaySelection, setOverlaySelectionState] = useState<OverlaySelection>(() =>
+    selectionFromMetricId(overlayIdFromParam(initialUrlMetric)),
+  )
+  const selectedOverlayId = metricIdFromSelection(overlaySelection)
+
+  const setOverlaySelection = useCallback((next: OverlaySelection) => {
+    setOverlaySelectionState(next)
+  }, [])
+
+  const setSelectedOverlayId = useCallback((overlayId: string) => {
+    setOverlaySelectionState((prev) => selectionFromMetricId(overlayId, prev))
+  }, [])
+
   const [selectedDetail, setSelectedDetail] = useState<AreaDetail | null>(null)
   const [nationalDetail, setNationalDetail] = useState<AreaDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -107,44 +117,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeMetricTiers, setActiveMetricTiers] = useState<GeographyTier[]>(['rc'])
 
   const ensureMetrics = useCallback(
-    async (
-      tiers: GeographyTier[],
-      year = selectedYear,
-      ageGroup = selectedAgeGroup,
-      overlayId = selectedOverlayId,
-    ) => {
+    async (tiers: GeographyTier[], year = selectedYear, ageGroup = selectedAgeGroup) => {
       setActiveMetricTiers(tiers)
       if (!year) return
-      const metricId = getOverlayMetric(overlayId).id
 
       const missing = tiers.filter(
-        (tier) => !metricsLoadedRef.current.has(metricsKey(tier, year, ageGroup, metricId)),
+        (tier) => !packsLoadedRef.current.has(packKey(tier, year, ageGroup)),
       )
       if (missing.length === 0) return
 
       const results = await Promise.all(
         missing.map(async (tier) => {
-          const data = await loadMetrics(tier, year, ageGroup, metricId)
-          return { tier, data }
+          const pack = await loadMetricsPack(tier, year, ageGroup)
+          return { tier, pack }
         }),
       )
 
       for (const r of results) {
-        metricsLoadedRef.current.add(metricsKey(r.tier, year, ageGroup, metricId))
+        packsLoadedRef.current.add(packKey(r.tier, year, ageGroup))
       }
 
-      setMetricsByKey((prev) => {
+      setMetricsPacksByKey((prev) => {
         const next = { ...prev }
         for (const r of results) {
-          next[metricsKey(r.tier, year, ageGroup, metricId)] = r.data
+          next[packKey(r.tier, year, ageGroup)] = r.pack
         }
         return next
       })
     },
-    [selectedYear, selectedAgeGroup, selectedOverlayId],
+    [selectedYear, selectedAgeGroup],
   )
 
-  // Bootstrap: manifest + name index + national detail + RC metrics
+  // Bootstrap: manifest + name index + national detail + RC metrics pack
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -175,11 +179,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const overlayId = overlayIdFromParam(initialUrlMetric)
         setSelectedYear(year)
         setSelectedAgeGroup(ageGroup)
-        setSelectedOverlayId(overlayId)
-        const rcMetrics = await loadMetrics('rc', year, ageGroup, overlayId)
+        setOverlaySelectionState(selectionFromMetricId(overlayId))
+        const rcPack = await loadMetricsPack('rc', year, ageGroup)
         if (cancelled) return
-        metricsLoadedRef.current.add(metricsKey('rc', year, ageGroup, overlayId))
-        setMetricsByKey({ [metricsKey('rc', year, ageGroup, overlayId)]: rcMetrics })
+        packsLoadedRef.current.add(packKey('rc', year, ageGroup))
+        setMetricsPacksByKey({ [packKey('rc', year, ageGroup)]: rcPack })
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -194,7 +198,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [initialUrlAge, initialUrlMetric, initialUrlYear])
 
-  // Reload metrics when year/age/overlay changes for active tiers
+  // Reload metrics packs when year/age changes for active tiers
   useEffect(() => {
     if (loading) return
     void ensureMetrics(activeMetricTiers)
@@ -212,7 +216,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Try name index; fall back to national
     const entry = resolveIndexEntry(nameIndex, areaName)
     if (!entry && nameIndex.size === 0) return
 
@@ -229,14 +232,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         if (cancelled) return
         areaCacheRef.current.set(detail.name, detail)
-        // Also cache under the selected label if different
         areaCacheRef.current.set(areaName, detail)
         setSelectedDetail(detail)
       } catch (err) {
         console.error('Failed to load area detail', err)
-        if (!cancelled) {
-          // Keep previous detail rather than blanking panel
-        }
       } finally {
         if (!cancelled) setDetailLoading(false)
       }
@@ -248,13 +247,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [selectedArea, nameIndex, manifest])
 
   const metrics = useMemo(() => {
+    const metricId = getOverlayMetric(selectedOverlayId).id
     const parts: Record<string, number>[] = []
     for (const tier of activeMetricTiers) {
-      const key = metricsKey(tier, selectedYear, selectedAgeGroup, selectedOverlayId)
-      if (metricsByKey[key]) parts.push(metricsByKey[key])
+      const key = packKey(tier, selectedYear, selectedAgeGroup)
+      const pack = metricsPacksByKey[key]
+      if (pack?.[metricId]) parts.push(pack[metricId])
     }
     return Object.assign({}, ...parts)
-  }, [activeMetricTiers, metricsByKey, selectedYear, selectedAgeGroup, selectedOverlayId])
+  }, [activeMetricTiers, metricsPacksByKey, selectedYear, selectedAgeGroup, selectedOverlayId])
 
   const regionData = useMemo<RegionData>(() => {
     if (!selectedDetail) return {}
@@ -281,6 +282,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSelectedYear,
     selectedAgeGroup,
     setSelectedAgeGroup,
+    overlaySelection,
+    setOverlaySelection,
     selectedOverlayId,
     setSelectedOverlayId,
     availableYears,

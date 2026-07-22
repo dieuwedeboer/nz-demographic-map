@@ -11,8 +11,8 @@ import {
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
-import { ageGroupSlug, darkenHexColor } from './domain/geo'
 import { type PieDetailHighlight, pieDetailHighlightForOverlay } from './domain/overlay'
+import { overlayAccentColor } from './domain/overlayColour'
 import {
   AGE_GROUPS,
   type AgeGroup,
@@ -20,6 +20,7 @@ import {
   type DisplayItem,
   LEVEL3_KEY_MAP,
 } from './domain/types'
+import { shareUrlForState } from './lib/shareUrl'
 import { resolveIndexEntry } from './services/dataLoader'
 
 interface PieSlice {
@@ -28,8 +29,6 @@ interface PieSlice {
   color: string
   startAngle: number
   endAngle: number
-  /** When set, this wedge is a map-detail sub-group carved from a parent category. */
-  isDetailHighlight?: boolean
 }
 
 type InfoPanelTab = 'details' | 'controls'
@@ -51,26 +50,8 @@ interface PanelStyle extends CSSProperties {
 
 const MOBILE_PANEL_QUERY = '(max-width: 640px)'
 const PANEL_DRAG_THRESHOLD = 44
-const AREA_QUERY_PARAM = 'area'
-const YEAR_QUERY_PARAM = 'year'
-const AGE_QUERY_PARAM = 'age'
-const METRIC_QUERY_PARAM = 'metric'
 const isMobilePanelViewport = () =>
   typeof window !== 'undefined' && window.matchMedia(MOBILE_PANEL_QUERY).matches
-
-function shareUrlForSlug(slug: string | null, year: string, ageGroup: string, overlayId?: string) {
-  if (!slug || typeof window === 'undefined') return ''
-  const url = new URL(window.location.href)
-  url.searchParams.set(AREA_QUERY_PARAM, slug)
-  url.searchParams.set(YEAR_QUERY_PARAM, year)
-  url.searchParams.set(AGE_QUERY_PARAM, ageGroupSlug(ageGroup))
-  if (overlayId && overlayId !== 'european') {
-    url.searchParams.set(METRIC_QUERY_PARAM, overlayId)
-  } else {
-    url.searchParams.delete(METRIC_QUERY_PARAM)
-  }
-  return url.href
-}
 
 async function copyShareUrl(url: string) {
   if (!url) return false
@@ -82,71 +63,57 @@ async function copyShareUrl(url: string) {
   }
 }
 
-function buildPieSlices(items: DisplayItem[], detail: PieDetailHighlight | null): PieSlice[] {
+function buildPieSlices(items: DisplayItem[]): PieSlice[] {
   const positive = items.filter((i) => i.value > 0)
   const sum = positive.reduce((s, i) => s + i.value, 0)
   if (sum <= 0) return []
 
-  const parts: Array<{
-    name: string
-    value: number
-    color: string
-    isDetailHighlight?: boolean
-  }> = []
-
-  for (const item of positive) {
-    const baseColor = CATEGORY_COLORS[item.name] || '#888'
-    const isParent =
-      detail && item.name === detail.parentCategory && detail.subValue > 0 && item.value > 0
-
-    if (isParent && detail) {
-      // Carve the map detail out of the parent single-response slice (counts).
-      const subValue = Math.min(detail.subValue, item.value)
-      const remainder = item.value - subValue
-      if (subValue > 0) {
-        parts.push({
-          name: detail.subLabel,
-          value: subValue,
-          color: darkenHexColor(baseColor, 0.34),
-          isDetailHighlight: true,
-        })
-      }
-      if (remainder > 0) {
-        parts.push({ name: item.name, value: remainder, color: baseColor })
-      }
-    } else {
-      parts.push({ name: item.name, value: item.value, color: baseColor })
-    }
-  }
-
   let angle = 0
-  return parts.map((part) => {
-    const sweep = (part.value / sum) * 360
+  return positive.map((item) => {
+    const sweep = (item.value / sum) * 360
     const slice: PieSlice = {
-      name: part.name,
-      value: part.value,
-      color: part.color,
+      name: item.name,
+      value: item.value,
+      color: CATEGORY_COLORS[item.name] || '#888',
       startAngle: angle,
       endAngle: angle + sweep,
-      isDetailHighlight: part.isDetailHighlight,
     }
     angle += sweep
     return slice
   })
 }
 
-function EthnicityPie({
-  items,
-  isDark,
+/** Level-3 map detail as a callout — separate statistical base from single-response pie. */
+function MapDetailCallout({
   detail,
   totalStated,
+  overlayId,
 }: {
-  items: DisplayItem[]
-  isDark: boolean
-  detail: PieDetailHighlight | null
+  detail: PieDetailHighlight
   totalStated: number
+  overlayId: string
 }) {
-  const slices = useMemo(() => buildPieSlices(items, detail), [items, detail])
+  const pct = totalStated > 0 ? ((detail.subValue / totalStated) * 100).toFixed(1) : '0.0'
+  return (
+    <div className="map-detail-callout" role="note">
+      <span
+        className="pie-swatch"
+        style={{ background: overlayAccentColor(overlayId) }}
+        aria-hidden="true"
+      />
+      <div className="map-detail-callout-copy">
+        <strong>{detail.subLabel}</strong>
+        <span>
+          {detail.subValue.toLocaleString()} people ({pct}% of stated) — level-3 multi-response
+          count within {detail.parentCategory}; not a slice of the pie above.
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean }) {
+  const slices = useMemo(() => buildPieSlices(items), [items])
 
   if (slices.length === 0) return null
 
@@ -165,10 +132,7 @@ function EthnicityPie({
       >
         {slices.map((slice) => {
           const key = `${slice.name}-${slice.startAngle}`
-          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : '0.0'
-          const title = slice.isDetailHighlight
-            ? `${slice.name}: ${slice.value.toLocaleString()} (${ofTotal}% of total)`
-            : `${slice.name}: ${slice.value.toLocaleString()}`
+          const title = `${slice.name}: ${slice.value.toLocaleString()}`
           if (slice.endAngle - slice.startAngle >= 359.99) {
             return (
               <circle key={key} cx={cx} cy={cy} r={r} fill={slice.color}>
@@ -190,23 +154,12 @@ function EthnicityPie({
         })}
       </svg>
       <div className="pie-legend">
-        {slices.map((slice) => {
-          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : null
-          return (
-            <div
-              key={`${slice.name}-${slice.startAngle}`}
-              className={`pie-legend-row${slice.isDetailHighlight ? ' pie-legend-detail' : ''}`}
-            >
-              <span className="pie-swatch" style={{ background: slice.color }} />
-              <span className="pie-legend-label">
-                {slice.name}
-                {slice.isDetailHighlight && ofTotal != null ? (
-                  <span className="pie-legend-pct"> {ofTotal}%</span>
-                ) : null}
-              </span>
-            </div>
-          )
-        })}
+        {slices.map((slice) => (
+          <div key={`${slice.name}-${slice.startAngle}`} className="pie-legend-row">
+            <span className="pie-swatch" style={{ background: slice.color }} />
+            <span className="pie-legend-label">{slice.name}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -311,7 +264,12 @@ function InfoPanel({ controls }: InfoPanelProps) {
     selectedDetail?.level3?.ethnicityData?.[selectedYear]?.[selectedAgeGroup]
   const selectedIndexEntry = resolveIndexEntry(nameIndex, selectedArea)
   const selectedSlug = selectedIndexEntry?.slug ?? null
-  const shareUrl = shareUrlForSlug(selectedSlug, selectedYear, selectedAgeGroup, selectedOverlayId)
+  const shareUrl = shareUrlForState({
+    slug: selectedSlug,
+    year: selectedYear,
+    ageGroup: selectedAgeGroup,
+    overlayId: selectedOverlayId,
+  })
 
   const isMobilePanel = isMobilePanelViewport
 
@@ -582,7 +540,10 @@ function InfoPanel({ controls }: InfoPanelProps) {
       </div>
       <p className="info-subtitle">Single/combination responses</p>
 
-      <EthnicityPie items={items} isDark={isDark} detail={pieDetail} totalStated={total} />
+      <EthnicityPie items={items} isDark={isDark} />
+      {pieDetail ? (
+        <MapDetailCallout detail={pieDetail} totalStated={total} overlayId={selectedOverlayId} />
+      ) : null}
 
       {selectedAgeGroup === 'Total - age' && <AgeBreakdown yearData={yearAllAges} />}
 

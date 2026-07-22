@@ -1,9 +1,11 @@
-import type { EthnicityCounts, EuropeanMetric, RegionEntry } from './types'
-import { LEVEL3_KEY_MAP } from './types'
+import catalogue from './overlay-metrics.json'
+import type { EthnicityCounts, OverlayMetricValue, RegionEntry } from './types'
 
 export type OverlaySource = 'single' | 'level3'
+export type OverlayPalette = 'european-diverging' | 'euro-maori-diverging' | 'monochrome'
+type OverlayScaleMode = 'fixed-0-100' | 'data-max'
 
-/** Choropleth overlay metric (top-level group or level-3 sub-ethnicity). */
+/** Choropleth overlay metric (top-level group, include-variant, or level-3 sub-ethnicity). */
 export interface OverlayMetric {
   id: string
   label: string
@@ -22,139 +24,32 @@ export interface OverlayMetric {
   baseGroupId?: string
   /** True when European/Māori dual responses are included with European or Maori only. */
   includesEurMaori?: boolean
+  palette: OverlayPalette
+  scale: OverlayScaleMode
+  accent: string
 }
 
-const MINIMUM_STATED_ETHNICITY_COUNT = 50
-
-const EUROPEAN_ONLY = 'European only'
-const MAORI_ONLY = 'Māori only'
-const EUROPEAN_MAORI = 'European/Māori'
-
-function topLevel(id: string, label: string, keys: string[], shortLabel?: string): OverlayMetric {
-  return {
-    id,
-    label,
-    shortLabel,
-    legendTitle: `${label} ethnicity share (%)`,
-    source: 'single',
-    keys,
-    parentId: null,
-  }
+/** Canonical UI selection; encodes to a metric id for URL + metrics load. */
+export interface OverlaySelection {
+  groupId: string
+  detailId: string | null
+  includeEurMaori: boolean
 }
 
-function level3Child(
-  id: string,
-  label: string,
-  parentId: string,
-  censusKey: string,
-): OverlayMetric {
-  return {
-    id,
-    label,
-    legendTitle: `${label} ethnicity share (%)`,
-    source: 'level3',
-    keys: [censusKey],
-    parentId,
-  }
-}
+const MINIMUM_STATED_ETHNICITY_COUNT = catalogue.minimumStatedEthnicityCount
+export const DEFAULT_OVERLAY_ID = catalogue.defaultOverlayId
 
-/** Top-level choropleth groupings shown in the Group dropdown. */
-export const TOP_LEVEL_OVERLAYS: OverlayMetric[] = [
-  topLevel('european', 'NZ European only', [EUROPEAN_ONLY]),
-  topLevel('maori', 'NZ Maori only', [MAORI_ONLY]),
-  // European only + Maori only + European/Māori dual responses
-  topLevel('european-maori', 'NZ European & Maori combined', [
-    EUROPEAN_ONLY,
-    MAORI_ONLY,
-    EUROPEAN_MAORI,
-  ]),
-  topLevel('asian', 'Asian only', ['Asian only']),
-  topLevel('pacific', 'Pacific Islander only', ['Pacific Peoples only']),
-  topLevel('melaa', 'MELAA only', ['Middle Eastern/Latin American/African only']),
-]
-
-/**
- * Optional European/Maori dual-response variants for European and Maori filters.
- * Not listed in the Group dropdown; selected via checkbox.
- */
-export const INCLUDE_EUR_MAORI_VARIANTS: OverlayMetric[] = [
-  {
-    id: 'european-incl-eur-maori',
-    label: 'NZ European only',
-    legendTitle: 'NZ European only ethnicity share (%)',
-    source: 'single',
-    keys: [EUROPEAN_ONLY, EUROPEAN_MAORI],
-    parentId: null,
-    baseGroupId: 'european',
-    includesEurMaori: true,
-  },
-  {
-    id: 'maori-incl-eur-maori',
-    label: 'NZ Maori only',
-    legendTitle: 'NZ Maori only ethnicity share (%)',
-    source: 'single',
-    keys: [MAORI_ONLY, EUROPEAN_MAORI],
-    parentId: null,
-    baseGroupId: 'maori',
-    includesEurMaori: true,
-  },
-]
-
-// European level-3 subgroups are intentionally omitted: shares are too small
-// for a national choropleth and clutter the Map colour controls.
-
-const ASIAN_CHILDREN: Array<[string, string]> = [
-  ['chinese', 'Chinese'],
-  ['indian', 'Indian'],
-  ['filipino', 'Filipino'],
-  ['japanese', 'Japanese'],
-  ['korean', 'Korean'],
-  ['sri-lankan', 'Sri Lankan'],
-  ['vietnamese', 'Vietnamese'],
-  ['cambodian', 'Cambodian'],
-]
-
-const PACIFIC_CHILDREN: Array<[string, string]> = [
-  ['samoan', 'Samoan'],
-  ['cook-islands-maori', 'Cook Islands Maori'],
-  ['tongan', 'Tongan'],
-  ['niuean', 'Niuean'],
-  ['tokelauan', 'Tokelauan'],
-  ['fijian', 'Fijian'],
-]
-
-const MELAA_CHILDREN: Array<[string, string]> = [
-  ['middle-eastern', 'Middle Eastern'],
-  ['latin-american', 'Latin American'],
-  ['african', 'African'],
-]
-
-function childrenFor(parentId: string, pairs: Array<[string, string]>): OverlayMetric[] {
-  return pairs.map(([id, label]) => {
-    const censusKey = LEVEL3_KEY_MAP[label]
-    if (!censusKey) {
-      throw new Error(`Missing LEVEL3_KEY_MAP entry for overlay child "${label}"`)
-    }
-    return level3Child(id, label, parentId, censusKey)
-  })
-}
-
-/** Level-3 drill-downs available under top-level groups. */
-export const CHILD_OVERLAYS: OverlayMetric[] = [
-  ...childrenFor('asian', ASIAN_CHILDREN),
-  ...childrenFor('pacific', PACIFIC_CHILDREN),
-  ...childrenFor('melaa', MELAA_CHILDREN),
-]
-
-export const ALL_OVERLAYS: OverlayMetric[] = [
-  ...TOP_LEVEL_OVERLAYS,
-  ...INCLUDE_EUR_MAORI_VARIANTS,
-  ...CHILD_OVERLAYS,
-]
+export const ALL_OVERLAYS: OverlayMetric[] = catalogue.metrics as OverlayMetric[]
 
 const OVERLAY_BY_ID = new Map(ALL_OVERLAYS.map((metric) => [metric.id, metric]))
 
-export const DEFAULT_OVERLAY_ID = 'european'
+/** Top-level choropleth groupings shown in the Group dropdown. */
+export const TOP_LEVEL_OVERLAYS: OverlayMetric[] = ALL_OVERLAYS.filter(
+  (metric) => !metric.parentId && !metric.baseGroupId,
+)
+
+/** Level-3 drill-downs available under top-level groups. */
+const CHILD_OVERLAYS: OverlayMetric[] = ALL_OVERLAYS.filter((metric) => Boolean(metric.parentId))
 
 export function getOverlayMetric(id: string | null | undefined): OverlayMetric {
   if (id && OVERLAY_BY_ID.has(id)) return OVERLAY_BY_ID.get(id)!
@@ -166,13 +61,13 @@ export function childrenOfOverlay(parentId: string): OverlayMetric[] {
 }
 
 /** Map colour top-level id → pie chart category name (InfoPanel). */
-export const OVERLAY_PARENT_TO_PIE_CATEGORY: Record<string, string> = {
+const OVERLAY_PARENT_TO_PIE_CATEGORY: Record<string, string> = {
   asian: 'Asian',
   pacific: 'Pacific Islander',
   melaa: 'MELAA & Other',
 }
 
-/** Active map-detail sub-group to carve out of a pie parent slice. */
+/** Active map-detail sub-group shown as a callout (not carved into the pie). */
 export interface PieDetailHighlight {
   parentCategory: string
   subLabel: string
@@ -180,8 +75,8 @@ export interface PieDetailHighlight {
 }
 
 /**
- * When a level-3 map colour is selected, return the sub-count to shade inside
- * the parent pie category (e.g. Chinese within Asian).
+ * When a level-3 map colour is selected, return the sub-count for a callout
+ * under the pie (level-3 multi-response base — not mixed into single-response wedges).
  */
 export function pieDetailHighlightForOverlay(
   overlayId: string,
@@ -210,12 +105,7 @@ export function topLevelIdFor(overlayId: string): string {
   return metric.parentId ?? metric.id
 }
 
-/**
- * True when Map colour is European or Maori (including include-dual variants).
- * Uses the group id so the checkbox stays available for those filters.
- */
-export function supportsIncludeEurMaori(overlayId: string): boolean {
-  const groupId = topLevelIdFor(overlayId)
+export function supportsIncludeEurMaori(groupId: string): boolean {
   return groupId === 'european' || groupId === 'maori'
 }
 
@@ -223,33 +113,61 @@ export function includesEurMaori(overlayId: string): boolean {
   return Boolean(getOverlayMetric(overlayId).includesEurMaori)
 }
 
-/**
- * Map a base European/Maori group id to the metric id for the include-dual checkbox.
- * Non european/maori ids are returned unchanged.
- */
-export function overlayIdWithIncludeEurMaori(baseGroupId: string, include: boolean): string {
-  if (baseGroupId === 'european') return include ? 'european-incl-eur-maori' : 'european'
-  if (baseGroupId === 'maori') return include ? 'maori-incl-eur-maori' : 'maori'
-  return baseGroupId
-}
-
-/**
- * When switching group/detail selection, preserve the include-dual preference for European/Maori.
- */
-export function resolveOverlaySelection(nextId: string, includeEurMaori: boolean): string {
-  const metric = getOverlayMetric(nextId)
-  // Level-3 detail: use as-is
-  if (metric.parentId) return metric.id
-  // Include variants: normalize via preference
-  const groupId = metric.baseGroupId ?? metric.id
-  if (groupId === 'european' || groupId === 'maori') {
-    return overlayIdWithIncludeEurMaori(groupId, includeEurMaori)
+export function metricIdFromSelection(selection: OverlaySelection): string {
+  if (selection.detailId) {
+    const detail = getOverlayMetric(selection.detailId)
+    if (detail.parentId === selection.groupId) return detail.id
   }
-  return metric.id
+  if (supportsIncludeEurMaori(selection.groupId) && selection.includeEurMaori) {
+    if (selection.groupId === 'european') return 'european-incl-eur-maori'
+    if (selection.groupId === 'maori') return 'maori-incl-eur-maori'
+  }
+  return getOverlayMetric(selection.groupId).id
 }
 
-export function overlayMetricSlug(id: string): string {
-  return getOverlayMetric(id).id
+/**
+ * Decode a metric id into UI selection.
+ * When the metric is not a European/Maori include variant, `includeEurMaori`
+ * is taken from `previous` so the preference survives Asian/Pacific detail.
+ */
+export function selectionFromMetricId(
+  metricId: string | null | undefined,
+  previous?: OverlaySelection,
+): OverlaySelection {
+  const metric = getOverlayMetric(metricId)
+  if (metric.parentId) {
+    return {
+      groupId: metric.parentId,
+      detailId: metric.id,
+      includeEurMaori: previous?.includeEurMaori ?? false,
+    }
+  }
+  const groupId = metric.baseGroupId ?? metric.id
+  if (supportsIncludeEurMaori(groupId)) {
+    return {
+      groupId,
+      detailId: null,
+      includeEurMaori: Boolean(metric.includesEurMaori),
+    }
+  }
+  return {
+    groupId,
+    detailId: null,
+    includeEurMaori: previous?.includeEurMaori ?? false,
+  }
+}
+
+/** Prepare-data / manifest export: id + source + keys only. */
+export function overlayMetricsForPrepare(): Array<{
+  id: string
+  source: OverlaySource
+  keys: string[]
+}> {
+  return ALL_OVERLAYS.map((metric) => ({
+    id: metric.id,
+    source: metric.source,
+    keys: metric.keys,
+  }))
 }
 
 export function sumMetricKeys(data: EthnicityCounts | undefined, keys: string[]): number {
@@ -271,7 +189,7 @@ export function getOverlayMetricData(
   year: string,
   ageGroup = 'Total - age',
   overlayId: string = DEFAULT_OVERLAY_ID,
-): EuropeanMetric | null {
+): OverlayMetricValue | null {
   if (!regionEntry || !year) return null
   const metric = getOverlayMetric(overlayId)
   const yearData = regionEntry.ethnicityData[year]
@@ -287,13 +205,4 @@ export function getOverlayMetricData(
     count,
     percentage: (count / total) * 100,
   }
-}
-
-/** @deprecated Prefer getOverlayMetricData — kept for call-site migration. */
-export function getEuropeanData(
-  regionEntry: RegionEntry | null,
-  year: string,
-  ageGroup = 'Total - age',
-): EuropeanMetric | null {
-  return getOverlayMetricData(regionEntry, year, ageGroup, 'european')
 }

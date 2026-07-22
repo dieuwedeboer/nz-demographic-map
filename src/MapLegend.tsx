@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { legendTickValues, overlayFillColor } from './domain/geo'
 import { getOverlayMetric } from './domain/overlay'
+import { legendTickValues, overlayFillColor } from './domain/overlayColour'
 
 const GRADIENT_SAMPLES = 50
 

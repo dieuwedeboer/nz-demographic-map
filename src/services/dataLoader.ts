@@ -8,6 +8,7 @@ export interface DataManifest {
   tiers: GeographyTier[]
   overlayMetrics?: string[]
   defaultOverlayMetric?: string
+  metricsFormat?: 'packed' | 'per-metric'
   nationalKey: string
   nationalSlug: string
   ethnicities: Record<string, string>
@@ -28,6 +29,9 @@ export interface AreaDetail {
   single: RegionEntry
   level3: RegionEntry | null
 }
+
+/** metricId → areaName → percentage */
+export type MetricsPack = Record<string, Record<string, number>>
 
 const cache = new Map<string, unknown>()
 const inflight = new Map<string, Promise<unknown>>()
@@ -62,17 +66,14 @@ export async function loadManifest(): Promise<DataManifest> {
   return fetchJson<DataManifest>(assetUrl('data/prepared/manifest.json'))
 }
 
-export async function loadMetrics(
+/** One pack per tier/year/age: all overlay metrics in a single file. */
+export async function loadMetricsPack(
   tier: GeographyTier,
   year: string,
   ageGroup: string,
-  overlayMetricId = 'european',
-): Promise<Record<string, number>> {
+): Promise<MetricsPack> {
   const ageSlug = ageGroupSlug(ageGroup)
-  const metricSlug = overlayMetricId || 'european'
-  return fetchJson<Record<string, number>>(
-    assetUrl(`data/prepared/metrics/${tier}/${year}-${ageSlug}-${metricSlug}.json`),
-  )
+  return fetchJson<MetricsPack>(assetUrl(`data/prepared/metrics/${tier}/${year}-${ageSlug}.json`))
 }
 
 export async function loadNameIndex(): Promise<Map<string, NameIndexEntry>> {

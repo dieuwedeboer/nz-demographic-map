@@ -6,9 +6,10 @@ import {
   getOverlayMetric,
   getOverlayMetricData,
   includesEurMaori,
-  overlayIdWithIncludeEurMaori,
+  metricIdFromSelection,
+  overlayMetricsForPrepare,
   pieDetailHighlightForOverlay,
-  resolveOverlaySelection,
+  selectionFromMetricId,
   sumMetricKeys,
   supportsIncludeEurMaori,
   TOP_LEVEL_OVERLAYS,
@@ -85,29 +86,76 @@ describe('overlay catalogue', () => {
     const ids = ALL_OVERLAYS.map((m) => m.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
+
+  it('declares palette and scale on every metric', () => {
+    for (const metric of ALL_OVERLAYS) {
+      expect(metric.palette).toMatch(/^(european-diverging|euro-maori-diverging|monochrome)$/)
+      expect(metric.scale).toMatch(/^(fixed-0-100|data-max)$/)
+      expect(metric.accent).toMatch(/^#[0-9a-f]{6}$/i)
+    }
+  })
+
+  it('exports prepare-compatible id/source/keys list', () => {
+    const prepared = overlayMetricsForPrepare()
+    expect(prepared).toHaveLength(ALL_OVERLAYS.length)
+    expect(prepared[0]).toEqual({
+      id: ALL_OVERLAYS[0].id,
+      source: ALL_OVERLAYS[0].source,
+      keys: ALL_OVERLAYS[0].keys,
+    })
+  })
 })
 
-describe('include European/Maori variants', () => {
+describe('OverlaySelection encode/decode', () => {
   it('supports include only on European and Maori group views', () => {
     expect(supportsIncludeEurMaori('european')).toBe(true)
-    expect(supportsIncludeEurMaori('maori-incl-eur-maori')).toBe(true)
+    expect(supportsIncludeEurMaori('maori')).toBe(true)
     expect(supportsIncludeEurMaori('chinese')).toBe(false)
     expect(supportsIncludeEurMaori('european-maori')).toBe(false)
     expect(supportsIncludeEurMaori('asian')).toBe(false)
   })
 
-  it('maps include preference to metric ids', () => {
-    expect(overlayIdWithIncludeEurMaori('european', true)).toBe('european-incl-eur-maori')
-    expect(overlayIdWithIncludeEurMaori('maori', true)).toBe('maori-incl-eur-maori')
-    expect(overlayIdWithIncludeEurMaori('european', false)).toBe('european')
+  it('maps selection to metric ids', () => {
+    expect(
+      metricIdFromSelection({ groupId: 'european', detailId: null, includeEurMaori: true }),
+    ).toBe('european-incl-eur-maori')
+    expect(metricIdFromSelection({ groupId: 'maori', detailId: null, includeEurMaori: true })).toBe(
+      'maori-incl-eur-maori',
+    )
+    expect(
+      metricIdFromSelection({ groupId: 'european', detailId: null, includeEurMaori: false }),
+    ).toBe('european')
+    expect(
+      metricIdFromSelection({ groupId: 'asian', detailId: 'chinese', includeEurMaori: true }),
+    ).toBe('chinese')
     expect(includesEurMaori('european-incl-eur-maori')).toBe(true)
   })
 
-  it('preserves include preference when resolving group selection', () => {
-    expect(resolveOverlaySelection('european', true)).toBe('european-incl-eur-maori')
-    expect(resolveOverlaySelection('maori', true)).toBe('maori-incl-eur-maori')
-    expect(resolveOverlaySelection('chinese', true)).toBe('chinese')
-    expect(resolveOverlaySelection('asian', true)).toBe('asian')
+  it('preserves include preference when decoding non-euro/maori metrics', () => {
+    const previous = { groupId: 'european', detailId: null, includeEurMaori: true }
+    expect(selectionFromMetricId('chinese', previous)).toEqual({
+      groupId: 'asian',
+      detailId: 'chinese',
+      includeEurMaori: true,
+    })
+    expect(selectionFromMetricId('asian', previous)).toEqual({
+      groupId: 'asian',
+      detailId: null,
+      includeEurMaori: true,
+    })
+  })
+
+  it('decodes include variants from metric id', () => {
+    expect(selectionFromMetricId('european-incl-eur-maori')).toEqual({
+      groupId: 'european',
+      detailId: null,
+      includeEurMaori: true,
+    })
+    expect(selectionFromMetricId('maori')).toEqual({
+      groupId: 'maori',
+      detailId: null,
+      includeEurMaori: false,
+    })
   })
 })
 
@@ -115,7 +163,6 @@ describe('getOverlayMetricData', () => {
   it('computes top-level shares from single-response keys', () => {
     expect(getOverlayMetricData(sample, '2023', 'Total - age', 'european')?.percentage).toBe(40)
     expect(getOverlayMetricData(sample, '2023', 'Total - age', 'maori')?.percentage).toBe(20)
-    // European & Maori = European only + Maori only + dual
     expect(getOverlayMetricData(sample, '2023', 'Total - age', 'european-maori')?.percentage).toBe(
       70,
     )

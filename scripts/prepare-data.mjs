@@ -1,11 +1,14 @@
 /**
  * Prepare slim static data for progressive loading:
- * - metrics/{tier}/{year}-{age}.json  — choropleth only (KB)
+ * - metrics/{tier}/{year}-{age}.json  — packed choropleth (all overlays)
  * - areas/{slug}.json                 — full detail for one place (~40KB)
  * - national.json                     — NZ totals for default panel
  * - name-index.json                   — normalize → { name, slug, tier, center }
  * - search-index.json                 — compact list for typeahead
  * - manifest.json
+ *
+ * Overlay catalogue: single source at src/domain/overlay-metrics.json
+ * (shared with the app via src/domain/overlay.ts).
  */
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -14,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const publicData = join(root, 'public', 'data')
 const outRoot = join(publicData, 'prepared')
+const cataloguePath = join(root, 'src', 'domain', 'overlay-metrics.json')
 
 const AGE_GROUPS = [
   'Total - age',
@@ -24,57 +28,16 @@ const AGE_GROUPS = [
 ]
 
 const YEARS = ['2013', '2018', '2023']
-// Suppress percentages based on too few stated ethnicity responses to be meaningful.
-const MINIMUM_STATED_ETHNICITY_COUNT = 50
 
-/**
- * Choropleth metrics (must stay in sync with src/domain/overlay.ts).
- * source: 'single' uses detailed single/combination tables; 'level3' uses level-3 ethnicity.
- */
-const OVERLAY_METRICS = [
-  { id: 'european', source: 'single', keys: ['European only'] },
-  { id: 'maori', source: 'single', keys: ['Māori only'] },
-  // European only + Maori only + European/Māori dual
-  {
-    id: 'european-maori',
-    source: 'single',
-    keys: ['European only', 'Māori only', 'European/Māori'],
-  },
-  // Optional dual-response variants for European / Maori filters
-  {
-    id: 'european-incl-eur-maori',
-    source: 'single',
-    keys: ['European only', 'European/Māori'],
-  },
-  {
-    id: 'maori-incl-eur-maori',
-    source: 'single',
-    keys: ['Māori only', 'European/Māori'],
-  },
-  { id: 'asian', source: 'single', keys: ['Asian only'] },
-  { id: 'pacific', source: 'single', keys: ['Pacific Peoples only'] },
-  { id: 'melaa', source: 'single', keys: ['Middle Eastern/Latin American/African only'] },
-  // Asian level-3 (named groups only — no residual "other")
-  { id: 'chinese', source: 'level3', keys: ['Chinese'] },
-  { id: 'indian', source: 'level3', keys: ['Indian'] },
-  { id: 'filipino', source: 'level3', keys: ['Filipino'] },
-  { id: 'japanese', source: 'level3', keys: ['Japanese'] },
-  { id: 'korean', source: 'level3', keys: ['Korean'] },
-  { id: 'sri-lankan', source: 'level3', keys: ['Sri Lankan'] },
-  { id: 'vietnamese', source: 'level3', keys: ['Vietnamese'] },
-  { id: 'cambodian', source: 'level3', keys: ['Cambodian'] },
-  // Pacific level-3 (named groups only)
-  { id: 'samoan', source: 'level3', keys: ['Samoan'] },
-  { id: 'cook-islands-maori', source: 'level3', keys: ['Cook Islands Maori'] },
-  { id: 'tongan', source: 'level3', keys: ['Tongan'] },
-  { id: 'niuean', source: 'level3', keys: ['Niuean'] },
-  { id: 'tokelauan', source: 'level3', keys: ['Tokelauan'] },
-  { id: 'fijian', source: 'level3', keys: ['Fijian'] },
-  // MELAA level-3 (named groups only)
-  { id: 'middle-eastern', source: 'level3', keys: ['Middle Eastern'] },
-  { id: 'latin-american', source: 'level3', keys: ['Latin American'] },
-  { id: 'african', source: 'level3', keys: ['African'] },
-]
+const catalogue = JSON.parse(await readFile(cataloguePath, 'utf8'))
+const MINIMUM_STATED_ETHNICITY_COUNT = catalogue.minimumStatedEthnicityCount
+const DEFAULT_OVERLAY_ID = catalogue.defaultOverlayId
+/** id + source + keys from the shared catalogue. */
+const OVERLAY_METRICS = catalogue.metrics.map((metric) => ({
+  id: metric.id,
+  source: metric.source,
+  keys: metric.keys,
+}))
 
 function normalizeName(name) {
   if (!name) return ''
@@ -319,7 +282,8 @@ async function main() {
     for (const year of YEARS) {
       for (const age of AGE_GROUPS) {
         const ageSlug = age === 'Total - age' ? 'all' : age.replace(/\s+/g, '-').toLowerCase()
-        let europeanMetrics = null
+        // Packed file: { [metricId]: { [areaName]: pct } } — one fetch per year/age/tier
+        const pack = {}
         for (const overlay of OVERLAY_METRICS) {
           const metrics = {}
           const sourceTable = overlay.source === 'level3' ? level3 : single
@@ -333,19 +297,9 @@ async function main() {
             // Key by map display name so MapLibre match expressions work
             if (pct !== null) metrics[name] = pct
           }
-          await writeJson(
-            join(outRoot, 'metrics', tier, `${year}-${ageSlug}-${overlay.id}.json`),
-            metrics,
-          )
-          if (overlay.id === 'european') europeanMetrics = metrics
+          pack[overlay.id] = metrics
         }
-        // Backward-compatible alias: un-suffixed file is European (legacy clients/tests)
-        if (europeanMetrics) {
-          await writeJson(
-            join(outRoot, 'metrics', tier, `${year}-${ageSlug}.json`),
-            europeanMetrics,
-          )
-        }
+        await writeJson(join(outRoot, 'metrics', tier, `${year}-${ageSlug}.json`), pack)
       }
     }
 
@@ -383,7 +337,8 @@ async function main() {
     ageGroups: AGE_GROUPS,
     tiers: ['rc', 'ta', 'sa2'],
     overlayMetrics: OVERLAY_METRICS.map((m) => m.id),
-    defaultOverlayMetric: 'european',
+    defaultOverlayMetric: DEFAULT_OVERLAY_ID,
+    metricsFormat: 'packed',
     nationalKey: nationalName,
     nationalSlug:
       nameIndexOut[normalizeName(nationalName)]?.slug || 'total-new-zealand-by-regional-council',

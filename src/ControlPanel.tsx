@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTheme } from './contexts/ThemeContext'
 import {
   childrenOfOverlay,
-  getOverlayMetric,
-  includesEurMaori,
-  resolveOverlaySelection,
+  type OverlaySelection,
   supportsIncludeEurMaori,
   TOP_LEVEL_OVERLAYS,
-  topLevelIdFor,
 } from './domain/overlay'
 import type { AgeGroup } from './domain/types'
 
@@ -18,8 +15,8 @@ interface ControlPanelProps {
   availableAgeGroups: AgeGroup[]
   selectedAgeGroup: AgeGroup
   onAgeGroupChange: (ageGroup: AgeGroup) => void
-  selectedOverlayId: string
-  onOverlayChange: (overlayId: string) => void
+  overlaySelection: OverlaySelection
+  onOverlaySelectionChange: (selection: OverlaySelection) => void
   showRegionalCouncils: boolean
   onShowRegionalCouncilsChange: (show: boolean) => void
   showTerritorialAuthorities: boolean
@@ -37,8 +34,8 @@ function ControlPanel({
   availableAgeGroups,
   selectedAgeGroup,
   onAgeGroupChange,
-  selectedOverlayId,
-  onOverlayChange,
+  overlaySelection,
+  onOverlaySelectionChange,
   showRegionalCouncils,
   onShowRegionalCouncilsChange,
   showTerritorialAuthorities,
@@ -50,34 +47,13 @@ function ControlPanel({
 }: ControlPanelProps) {
   const { theme, toggleTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
-  // Persist include preference while drilling into Asian/Pacific level-3 detail
-  const [includeEurMaori, setIncludeEurMaori] = useState(() => includesEurMaori(selectedOverlayId))
-  const selectedTopLevelId = topLevelIdFor(selectedOverlayId)
-  const childOptions = useMemo(() => childrenOfOverlay(selectedTopLevelId), [selectedTopLevelId])
-  // Show for European / Maori groups (not when browsing Asian/Pacific detail only)
-  const showIncludeEurMaori = supportsIncludeEurMaori(selectedTopLevelId)
-  const allGroupOverlayId = resolveOverlaySelection(selectedTopLevelId, includeEurMaori)
-  const detailSelectValue = getOverlayMetric(selectedOverlayId).parentId
-    ? selectedOverlayId
-    : allGroupOverlayId
 
-  useEffect(() => {
-    if (includesEurMaori(selectedOverlayId)) setIncludeEurMaori(true)
-    else if (selectedOverlayId === 'european' || selectedOverlayId === 'maori') {
-      setIncludeEurMaori(false)
-    }
-  }, [selectedOverlayId])
-
-  const selectOverlay = (nextId: string) => {
-    onOverlayChange(resolveOverlaySelection(nextId, includeEurMaori))
-  }
-
-  const onIncludeEurMaoriChange = (checked: boolean) => {
-    setIncludeEurMaori(checked)
-    if (supportsIncludeEurMaori(selectedTopLevelId)) {
-      onOverlayChange(resolveOverlaySelection(selectedTopLevelId, checked))
-    }
-  }
+  const childOptions = useMemo(
+    () => childrenOfOverlay(overlaySelection.groupId),
+    [overlaySelection.groupId],
+  )
+  const showIncludeEurMaori = supportsIncludeEurMaori(overlaySelection.groupId)
+  const detailSelectValue = overlaySelection.detailId ?? 'all'
 
   const layerToggles = [
     {
@@ -156,8 +132,14 @@ function ControlPanel({
             <select
               id="overlay-group-selector"
               name="overlay-group"
-              value={selectedTopLevelId}
-              onChange={(e) => selectOverlay(e.target.value)}
+              value={overlaySelection.groupId}
+              onChange={(e) =>
+                onOverlaySelectionChange({
+                  groupId: e.target.value,
+                  detailId: null,
+                  includeEurMaori: overlaySelection.includeEurMaori,
+                })
+              }
               disabled={disabled}
             >
               {TOP_LEVEL_OVERLAYS.map((metric) => (
@@ -175,10 +157,16 @@ function ControlPanel({
                 id="overlay-detail-selector"
                 name="overlay-detail"
                 value={detailSelectValue}
-                onChange={(e) => selectOverlay(e.target.value)}
+                onChange={(e) =>
+                  onOverlaySelectionChange({
+                    groupId: overlaySelection.groupId,
+                    detailId: e.target.value === 'all' ? null : e.target.value,
+                    includeEurMaori: overlaySelection.includeEurMaori,
+                  })
+                }
                 disabled={disabled}
               >
-                <option value={allGroupOverlayId}>All</option>
+                <option value="all">All</option>
                 {childOptions.map((metric) => (
                   <option key={metric.id} value={metric.id}>
                     {metric.label}
@@ -195,8 +183,14 @@ function ControlPanel({
               id="include-eur-maori"
               name="include-eur-maori"
               type="checkbox"
-              checked={includeEurMaori}
-              onChange={(e) => onIncludeEurMaoriChange(e.target.checked)}
+              checked={overlaySelection.includeEurMaori}
+              onChange={(e) =>
+                onOverlaySelectionChange({
+                  groupId: overlaySelection.groupId,
+                  detailId: overlaySelection.detailId,
+                  includeEurMaori: e.target.checked,
+                })
+              }
               disabled={disabled}
             />
             <span className="toggle-track" aria-hidden="true">

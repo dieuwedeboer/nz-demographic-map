@@ -937,13 +937,35 @@ body {
   white-space: nowrap;
 }
 
-.pie-legend-detail .pie-legend-label {
-  font-weight: 600;
+.map-detail-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
 }
 
-.pie-legend-pct {
+.map-detail-callout .pie-swatch {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.map-detail-callout-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--muted);
-  font-weight: 500;
+}
+
+.map-detail-callout-copy strong {
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 .age-breakdown {

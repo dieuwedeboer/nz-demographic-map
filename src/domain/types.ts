@@ -45,7 +45,8 @@ export interface DisplayChild {
   value: number
 }
 
-export interface EuropeanMetric {
+/** Count + percentage for any overlay metric (group or level-3 detail). */
+export interface OverlayMetricValue {
   count: number
   percentage: number
 }

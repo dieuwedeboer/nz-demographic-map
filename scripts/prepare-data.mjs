@@ -7,7 +7,7 @@
  * - search-index.json                 — compact list for typeahead
  * - manifest.json
  */
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,6 +26,55 @@ const AGE_GROUPS = [
 const YEARS = ['2013', '2018', '2023']
 // Suppress percentages based on too few stated ethnicity responses to be meaningful.
 const MINIMUM_STATED_ETHNICITY_COUNT = 50
+
+/**
+ * Choropleth metrics (must stay in sync with src/domain/overlay.ts).
+ * source: 'single' uses detailed single/combination tables; 'level3' uses level-3 ethnicity.
+ */
+const OVERLAY_METRICS = [
+  { id: 'european', source: 'single', keys: ['European only'] },
+  { id: 'maori', source: 'single', keys: ['Māori only'] },
+  // European only + Maori only + European/Māori dual
+  {
+    id: 'european-maori',
+    source: 'single',
+    keys: ['European only', 'Māori only', 'European/Māori'],
+  },
+  // Optional dual-response variants for European / Maori filters
+  {
+    id: 'european-incl-eur-maori',
+    source: 'single',
+    keys: ['European only', 'European/Māori'],
+  },
+  {
+    id: 'maori-incl-eur-maori',
+    source: 'single',
+    keys: ['Māori only', 'European/Māori'],
+  },
+  { id: 'asian', source: 'single', keys: ['Asian only'] },
+  { id: 'pacific', source: 'single', keys: ['Pacific Peoples only'] },
+  { id: 'melaa', source: 'single', keys: ['Middle Eastern/Latin American/African only'] },
+  // Asian level-3 (named groups only — no residual "other")
+  { id: 'chinese', source: 'level3', keys: ['Chinese'] },
+  { id: 'indian', source: 'level3', keys: ['Indian'] },
+  { id: 'filipino', source: 'level3', keys: ['Filipino'] },
+  { id: 'japanese', source: 'level3', keys: ['Japanese'] },
+  { id: 'korean', source: 'level3', keys: ['Korean'] },
+  { id: 'sri-lankan', source: 'level3', keys: ['Sri Lankan'] },
+  { id: 'vietnamese', source: 'level3', keys: ['Vietnamese'] },
+  { id: 'cambodian', source: 'level3', keys: ['Cambodian'] },
+  // Pacific level-3 (named groups only)
+  { id: 'samoan', source: 'level3', keys: ['Samoan'] },
+  { id: 'cook-islands-maori', source: 'level3', keys: ['Cook Islands Maori'] },
+  { id: 'tongan', source: 'level3', keys: ['Tongan'] },
+  { id: 'niuean', source: 'level3', keys: ['Niuean'] },
+  { id: 'tokelauan', source: 'level3', keys: ['Tokelauan'] },
+  { id: 'fijian', source: 'level3', keys: ['Fijian'] },
+  // MELAA level-3 (named groups only)
+  { id: 'middle-eastern', source: 'level3', keys: ['Middle Eastern'] },
+  { id: 'latin-american', source: 'level3', keys: ['Latin American'] },
+  { id: 'african', source: 'level3', keys: ['African'] },
+]
 
 function normalizeName(name) {
   if (!name) return ''
@@ -56,12 +105,21 @@ function lookupRegion(regionData, nameIndex, name) {
   return key ? regionData[key] : null
 }
 
-function europeanPct(ageData) {
+function sumKeys(ageData, keys) {
+  let sum = 0
+  for (const key of keys) {
+    const value = ageData[key]
+    if (typeof value === 'number' && Number.isFinite(value)) sum += value
+  }
+  return sum
+}
+
+function metricPct(ageData, keys) {
   if (!ageData) return null
   const total = ageData['Total stated - ethnicity']
   if (typeof total !== 'number' || total < MINIMUM_STATED_ETHNICITY_COUNT) return null
-  const european = ageData['European only'] || 0
-  return Math.round((european / total) * 1000) / 10
+  const count = sumKeys(ageData, keys)
+  return Math.round((count / total) * 1000) / 10
 }
 
 async function loadJson(path) {
@@ -71,6 +129,20 @@ async function loadJson(path) {
 async function writeJson(path, data) {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, JSON.stringify(data))
+}
+
+/**
+ * Delete children of a directory without removing the directory itself.
+ * Vite's public-file server (sirv) caches directory existence; `rm -rf metrics/`
+ * while the dev server is running makes subsequent metric requests fall through
+ * to index.html (JSON parse errors). Keeping the directory node avoids that.
+ */
+async function emptyDirKeepRoot(dir) {
+  await mkdir(dir, { recursive: true })
+  const entries = await readdir(dir, { withFileTypes: true })
+  await Promise.all(
+    entries.map((entry) => rm(join(dir, entry.name), { recursive: true, force: true })),
+  )
 }
 
 /**
@@ -167,12 +239,12 @@ async function main() {
     loadJson(join(assets, 'statistical-area-2.json')),
   ])
 
-  // Wipe previous prepared output subdirectories (keeps prepared/ root intact
-  // so Vite's sirv cache doesn't lose track of root-level files)
-  for (const sub of ['areas', 'metrics']) {
-    await rm(join(outRoot, sub), { recursive: true, force: true })
-  }
+  // Clear previous prepared output without removing directory nodes (keeps
+  // prepared/, areas/, metrics/ so Vite's sirv cache still serves them).
   await mkdir(outRoot, { recursive: true })
+  for (const sub of ['areas', 'metrics']) {
+    await emptyDirKeepRoot(join(outRoot, sub))
+  }
 
   const singleIndex = buildNameIndex(single)
   const level3Index = buildNameIndex(level3)
@@ -246,17 +318,34 @@ async function main() {
     console.log(`Writing metrics + areas for ${tier} (${namesByTier[tier].length} features)...`)
     for (const year of YEARS) {
       for (const age of AGE_GROUPS) {
-        const metrics = {}
-        for (const name of namesByTier[tier]) {
-          const censusKey = resolveCensusName(name, singleIndex)
-          if (!censusKey) continue
-          const ageData = single[censusKey]?.ethnicityData?.[year]?.[age]
-          const pct = europeanPct(ageData)
-          // Key by map display name so MapLibre match expressions work
-          if (pct !== null) metrics[name] = pct
+        const ageSlug = age === 'Total - age' ? 'all' : age.replace(/\s+/g, '-').toLowerCase()
+        let europeanMetrics = null
+        for (const overlay of OVERLAY_METRICS) {
+          const metrics = {}
+          const sourceTable = overlay.source === 'level3' ? level3 : single
+          const sourceIndex = overlay.source === 'level3' ? level3Index : singleIndex
+          for (const name of namesByTier[tier]) {
+            const censusKey =
+              resolveCensusName(name, sourceIndex) || resolveCensusName(name, singleIndex)
+            if (!censusKey) continue
+            const ageData = sourceTable[censusKey]?.ethnicityData?.[year]?.[age]
+            const pct = metricPct(ageData, overlay.keys)
+            // Key by map display name so MapLibre match expressions work
+            if (pct !== null) metrics[name] = pct
+          }
+          await writeJson(
+            join(outRoot, 'metrics', tier, `${year}-${ageSlug}-${overlay.id}.json`),
+            metrics,
+          )
+          if (overlay.id === 'european') europeanMetrics = metrics
         }
-        const slug = age === 'Total - age' ? 'all' : age.replace(/\s+/g, '-').toLowerCase()
-        await writeJson(join(outRoot, 'metrics', tier, `${year}-${slug}.json`), metrics)
+        // Backward-compatible alias: un-suffixed file is European (legacy clients/tests)
+        if (europeanMetrics) {
+          await writeJson(
+            join(outRoot, 'metrics', tier, `${year}-${ageSlug}.json`),
+            europeanMetrics,
+          )
+        }
       }
     }
 
@@ -293,6 +382,8 @@ async function main() {
     years: YEARS,
     ageGroups: AGE_GROUPS,
     tiers: ['rc', 'ta', 'sa2'],
+    overlayMetrics: OVERLAY_METRICS.map((m) => m.id),
+    defaultOverlayMetric: 'european',
     nationalKey: nationalName,
     nationalSlug:
       nameIndexOut[normalizeName(nationalName)]?.slug || 'total-new-zealand-by-regional-council',

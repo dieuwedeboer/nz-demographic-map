@@ -11,7 +11,8 @@ import {
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
-import { ageGroupSlug } from './domain/geo'
+import { ageGroupSlug, darkenHexColor } from './domain/geo'
+import { type PieDetailHighlight, pieDetailHighlightForOverlay } from './domain/overlay'
 import {
   AGE_GROUPS,
   type AgeGroup,
@@ -27,6 +28,8 @@ interface PieSlice {
   color: string
   startAngle: number
   endAngle: number
+  /** When set, this wedge is a map-detail sub-group carved from a parent category. */
+  isDetailHighlight?: boolean
 }
 
 type InfoPanelTab = 'details' | 'controls'
@@ -51,15 +54,21 @@ const PANEL_DRAG_THRESHOLD = 44
 const AREA_QUERY_PARAM = 'area'
 const YEAR_QUERY_PARAM = 'year'
 const AGE_QUERY_PARAM = 'age'
+const METRIC_QUERY_PARAM = 'metric'
 const isMobilePanelViewport = () =>
   typeof window !== 'undefined' && window.matchMedia(MOBILE_PANEL_QUERY).matches
 
-function shareUrlForSlug(slug: string | null, year: string, ageGroup: string) {
+function shareUrlForSlug(slug: string | null, year: string, ageGroup: string, overlayId?: string) {
   if (!slug || typeof window === 'undefined') return ''
   const url = new URL(window.location.href)
   url.searchParams.set(AREA_QUERY_PARAM, slug)
   url.searchParams.set(YEAR_QUERY_PARAM, year)
   url.searchParams.set(AGE_QUERY_PARAM, ageGroupSlug(ageGroup))
+  if (overlayId && overlayId !== 'european') {
+    url.searchParams.set(METRIC_QUERY_PARAM, overlayId)
+  } else {
+    url.searchParams.delete(METRIC_QUERY_PARAM)
+  }
   return url.href
 }
 
@@ -73,26 +82,71 @@ async function copyShareUrl(url: string) {
   }
 }
 
-function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean }) {
-  const slices = useMemo(() => {
-    const positive = items.filter((i) => i.value > 0)
-    const sum = positive.reduce((s, i) => s + i.value, 0)
-    if (sum <= 0) return [] as PieSlice[]
+function buildPieSlices(items: DisplayItem[], detail: PieDetailHighlight | null): PieSlice[] {
+  const positive = items.filter((i) => i.value > 0)
+  const sum = positive.reduce((s, i) => s + i.value, 0)
+  if (sum <= 0) return []
 
-    let angle = 0
-    return positive.map((item) => {
-      const sweep = (item.value / sum) * 360
-      const slice: PieSlice = {
-        name: item.name,
-        value: item.value,
-        color: CATEGORY_COLORS[item.name] || '#888',
-        startAngle: angle,
-        endAngle: angle + sweep,
+  const parts: Array<{
+    name: string
+    value: number
+    color: string
+    isDetailHighlight?: boolean
+  }> = []
+
+  for (const item of positive) {
+    const baseColor = CATEGORY_COLORS[item.name] || '#888'
+    const isParent =
+      detail && item.name === detail.parentCategory && detail.subValue > 0 && item.value > 0
+
+    if (isParent && detail) {
+      // Carve the map detail out of the parent single-response slice (counts).
+      const subValue = Math.min(detail.subValue, item.value)
+      const remainder = item.value - subValue
+      if (subValue > 0) {
+        parts.push({
+          name: detail.subLabel,
+          value: subValue,
+          color: darkenHexColor(baseColor, 0.34),
+          isDetailHighlight: true,
+        })
       }
-      angle += sweep
-      return slice
-    })
-  }, [items])
+      if (remainder > 0) {
+        parts.push({ name: item.name, value: remainder, color: baseColor })
+      }
+    } else {
+      parts.push({ name: item.name, value: item.value, color: baseColor })
+    }
+  }
+
+  let angle = 0
+  return parts.map((part) => {
+    const sweep = (part.value / sum) * 360
+    const slice: PieSlice = {
+      name: part.name,
+      value: part.value,
+      color: part.color,
+      startAngle: angle,
+      endAngle: angle + sweep,
+      isDetailHighlight: part.isDetailHighlight,
+    }
+    angle += sweep
+    return slice
+  })
+}
+
+function EthnicityPie({
+  items,
+  isDark,
+  detail,
+  totalStated,
+}: {
+  items: DisplayItem[]
+  isDark: boolean
+  detail: PieDetailHighlight | null
+  totalStated: number
+}) {
+  const slices = useMemo(() => buildPieSlices(items, detail), [items, detail])
 
   if (slices.length === 0) return null
 
@@ -110,29 +164,49 @@ function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean
         aria-label="Ethnicity pie chart"
       >
         {slices.map((slice) => {
+          const key = `${slice.name}-${slice.startAngle}`
+          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : '0.0'
+          const title = slice.isDetailHighlight
+            ? `${slice.name}: ${slice.value.toLocaleString()} (${ofTotal}% of total)`
+            : `${slice.name}: ${slice.value.toLocaleString()}`
           if (slice.endAngle - slice.startAngle >= 359.99) {
-            return <circle key={slice.name} cx={cx} cy={cy} r={r} fill={slice.color} />
+            return (
+              <circle key={key} cx={cx} cy={cy} r={r} fill={slice.color}>
+                <title>{title}</title>
+              </circle>
+            )
           }
           return (
             <path
-              key={slice.name}
+              key={key}
               d={describeArc(cx, cy, r, slice.startAngle, slice.endAngle)}
               fill={slice.color}
               stroke={isDark ? '#333' : '#f0f0f0'}
               strokeWidth={1}
             >
-              <title>{`${slice.name}: ${slice.value.toLocaleString()}`}</title>
+              <title>{title}</title>
             </path>
           )
         })}
       </svg>
       <div className="pie-legend">
-        {slices.map((slice) => (
-          <div key={slice.name} className="pie-legend-row">
-            <span className="pie-swatch" style={{ background: slice.color }} />
-            <span className="pie-legend-label">{slice.name}</span>
-          </div>
-        ))}
+        {slices.map((slice) => {
+          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : null
+          return (
+            <div
+              key={`${slice.name}-${slice.startAngle}`}
+              className={`pie-legend-row${slice.isDetailHighlight ? ' pie-legend-detail' : ''}`}
+            >
+              <span className="pie-swatch" style={{ background: slice.color }} />
+              <span className="pie-legend-label">
+                {slice.name}
+                {slice.isDetailHighlight && ofTotal != null ? (
+                  <span className="pie-legend-pct"> {ofTotal}%</span>
+                ) : null}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -191,8 +265,15 @@ function AgeBreakdown({
 function InfoPanel({ controls }: InfoPanelProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
-  const { selectedArea, selectedYear, selectedAgeGroup, selectedDetail, detailLoading, nameIndex } =
-    useData()
+  const {
+    selectedArea,
+    selectedYear,
+    selectedAgeGroup,
+    selectedOverlayId,
+    selectedDetail,
+    detailLoading,
+    nameIndex,
+  } = useData()
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState(() => isMobilePanelViewport())
@@ -230,7 +311,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     selectedDetail?.level3?.ethnicityData?.[selectedYear]?.[selectedAgeGroup]
   const selectedIndexEntry = resolveIndexEntry(nameIndex, selectedArea)
   const selectedSlug = selectedIndexEntry?.slug ?? null
-  const shareUrl = shareUrlForSlug(selectedSlug, selectedYear, selectedAgeGroup)
+  const shareUrl = shareUrlForSlug(selectedSlug, selectedYear, selectedAgeGroup, selectedOverlayId)
 
   const isMobilePanel = isMobilePanelViewport
 
@@ -488,6 +569,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     selectedYear,
   )
 
+  const pieDetail = pieDetailHighlightForOverlay(selectedOverlayId, level3SelectedYearData)
   const yearAllAges = data.ethnicityData?.[selectedYear]
   const ageLabel = selectedAgeGroup === 'Total - age' ? 'All ages' : selectedAgeGroup
 
@@ -500,7 +582,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
       </div>
       <p className="info-subtitle">Single/combination responses</p>
 
-      <EthnicityPie items={items} isDark={isDark} />
+      <EthnicityPie items={items} isDark={isDark} detail={pieDetail} totalStated={total} />
 
       {selectedAgeGroup === 'Total - age' && <AgeBreakdown yearData={yearAllAges} />}
 

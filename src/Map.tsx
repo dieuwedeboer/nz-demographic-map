@@ -1,11 +1,18 @@
 import maplibregl from 'maplibre-gl'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
 import ControlPanel from './ControlPanel'
 import { useData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
-import { ageGroupSlug, europeanFillColor, getEuropeanData } from './domain/geo'
+import {
+  ageGroupSlug,
+  type ColourScaleDomain,
+  getOverlayMetricData,
+  overlayFillColor,
+  overlayScaleDomain,
+} from './domain/geo'
+import { DEFAULT_OVERLAY_ID, getOverlayMetric } from './domain/overlay'
 import {
   type AgeGroup,
   type GeographyTier,
@@ -34,6 +41,7 @@ const GEOGRAPHY_TIERS: GeographyTier[] = ['rc', 'ta', 'sa2']
 const AREA_QUERY_PARAM = 'area'
 const YEAR_QUERY_PARAM = 'year'
 const AGE_QUERY_PARAM = 'age'
+const METRIC_QUERY_PARAM = 'metric'
 const BORDER_COLOR = '#2f2f2f'
 const SELECTED_DOT_SPACING = 7
 const SELECTED_DOT_RADIUS = 1
@@ -155,6 +163,8 @@ function borderLineWidth(tier: GeographyTier): maplibregl.ExpressionSpecificatio
 function colorExpression(
   metrics: Record<string, number>,
   nameProp: string,
+  overlayId: string,
+  scale: ColourScaleDomain,
 ): maplibregl.ExpressionSpecification {
   const entries = Object.entries(metrics)
   if (entries.length === 0) return hoverColorExpression('#888')
@@ -162,7 +172,7 @@ function colorExpression(
   const matchExpr: unknown[] = ['match', ['get', nameProp]]
   const hoverMatchExpr: unknown[] = ['match', ['get', nameProp]]
   for (const [name, pct] of entries) {
-    const color = europeanFillColor(pct)
+    const color = overlayFillColor(pct, overlayId, scale.min, scale.max)
     matchExpr.push(name, color)
     hoverMatchExpr.push(name, lightenColor(color))
   }
@@ -358,6 +368,8 @@ function normalizeMapCoordinate([lng, lat]: Position): maplibregl.LngLatLike {
 
 function clearHoveredFeature(map: maplibregl.Map, hoveredFeature: HoveredFeature | null) {
   if (!hoveredFeature) return
+  // Tier sources are lazy-loaded and removed on zoom; skip if already gone.
+  if (!map.getSource(hoveredFeature.source)) return
   map.setFeatureState(hoveredFeature, { hover: false })
 }
 
@@ -400,11 +412,13 @@ function setShareUrlParams({
   slug,
   year,
   ageGroup,
+  overlayId,
   mode = 'push',
 }: {
   slug: string | null
   year: string
   ageGroup: string
+  overlayId: string
   mode?: 'push' | 'replace'
 }) {
   if (typeof window === 'undefined') return
@@ -414,6 +428,9 @@ function setShareUrlParams({
   else url.searchParams.delete(AREA_QUERY_PARAM)
   if (year) url.searchParams.set(YEAR_QUERY_PARAM, year)
   if (ageGroup) url.searchParams.set(AGE_QUERY_PARAM, ageGroupSlug(ageGroup))
+  const metric = getOverlayMetric(overlayId)
+  if (metric.id === DEFAULT_OVERLAY_ID) url.searchParams.delete(METRIC_QUERY_PARAM)
+  else url.searchParams.set(METRIC_QUERY_PARAM, metric.id)
 
   const nextUrl = `${url.pathname}${url.search}${url.hash}`
   const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -440,6 +457,8 @@ function MapView() {
     setSelectedYear,
     selectedAgeGroup,
     setSelectedAgeGroup,
+    selectedOverlayId,
+    setSelectedOverlayId,
     availableYears,
     availableAgeGroups,
     metrics,
@@ -453,12 +472,18 @@ function MapView() {
   } = useData()
   const { theme } = useTheme()
 
+  const colourScale = useMemo(
+    () => overlayScaleDomain(selectedOverlayId, metrics),
+    [metrics, selectedOverlayId],
+  )
+
   const containerRef = useRef<HTMLDivElement>(null)
   const selectedCanvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const nameIndexRef = useRef(nameIndex)
   const selectedYearRef = useRef(selectedYear)
   const selectedAgeGroupRef = useRef(selectedAgeGroup)
+  const selectedOverlayIdRef = useRef(selectedOverlayId)
   const ensureMetricsRef = useRef(ensureMetrics)
   const appliedAreaSlugRef = useRef<string | null>(null)
   const [zoomLevel, setZoomLevel] = useState(6)
@@ -487,6 +512,10 @@ function MapView() {
   }, [selectedAgeGroup])
 
   useEffect(() => {
+    selectedOverlayIdRef.current = selectedOverlayId
+  }, [selectedOverlayId])
+
+  useEffect(() => {
     ensureMetricsRef.current = ensureMetrics
   }, [ensureMetrics])
 
@@ -498,9 +527,11 @@ function MapView() {
       const slug = searchParams.get(AREA_QUERY_PARAM)
       const year = searchParams.get(YEAR_QUERY_PARAM)
       const ageGroup = ageGroupFromSlug(searchParams.get(AGE_QUERY_PARAM), availableAgeGroups)
+      const overlayId = getOverlayMetric(searchParams.get(METRIC_QUERY_PARAM)).id
       const map = mapRef.current
       const nextYear = year && availableYears.includes(year) ? year : selectedYearRef.current
       const nextAgeGroup = ageGroup ?? selectedAgeGroupRef.current
+      const nextOverlayId = overlayId || selectedOverlayIdRef.current
 
       if (nextYear !== selectedYearRef.current) {
         selectedYearRef.current = nextYear
@@ -509,6 +540,10 @@ function MapView() {
       if (nextAgeGroup !== selectedAgeGroupRef.current) {
         selectedAgeGroupRef.current = nextAgeGroup
         setSelectedAgeGroup(nextAgeGroup)
+      }
+      if (nextOverlayId !== selectedOverlayIdRef.current) {
+        selectedOverlayIdRef.current = nextOverlayId
+        setSelectedOverlayId(nextOverlayId)
       }
 
       if (!slug) {
@@ -524,7 +559,7 @@ function MapView() {
       if (!entry || !isGeographyTier(entry.tier)) return
 
       appliedAreaSlugRef.current = slug
-      void ensureMetricsRef.current([entry.tier], nextYear, nextAgeGroup)
+      void ensureMetricsRef.current([entry.tier], nextYear, nextAgeGroup, nextOverlayId)
       setSelectedArea(entry.name)
       if (map && entry.center) {
         const zoom = zoomForTier(entry.tier)
@@ -549,19 +584,20 @@ function MapView() {
     nationalKey,
     setSelectedAgeGroup,
     setSelectedArea,
+    setSelectedOverlayId,
     setSelectedYear,
   ])
 
   useEffect(() => {
     const slug = getUrlSearchParams().get(AREA_QUERY_PARAM)
-    if (!slug) return
     setShareUrlParams({
       slug,
       year: selectedYear,
       ageGroup: selectedAgeGroup,
+      overlayId: selectedOverlayId,
       mode: 'replace',
     })
-  }, [selectedAgeGroup, selectedYear])
+  }, [selectedAgeGroup, selectedOverlayId, selectedYear])
 
   // Init map
   useEffect(() => {
@@ -665,6 +701,7 @@ function MapView() {
           slug: null,
           year: selectedYearRef.current,
           ageGroup: selectedAgeGroupRef.current,
+          overlayId: selectedOverlayIdRef.current,
         })
         leaveHandler()
         return
@@ -679,6 +716,7 @@ function MapView() {
           slug: resolveIndexEntry(nameIndexRef.current, name)?.slug ?? null,
           year: selectedYearRef.current,
           ageGroup: selectedAgeGroupRef.current,
+          overlayId: selectedOverlayIdRef.current,
         })
       }
       leaveHandler()
@@ -726,7 +764,9 @@ function MapView() {
 
       clearHoveredFeature(map, hoveredFeature)
       hoveredFeature = nextHoveredFeature
-      map.setFeatureState(hoveredFeature, { hover: true })
+      if (map.getSource(hoveredFeature.source)) {
+        map.setFeatureState(hoveredFeature, { hover: true })
+      }
       hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
     }
 
@@ -858,16 +898,29 @@ function MapView() {
     const map = mapRef.current
     if (!map || !mapReady) return
 
-    const nationalMetric = getEuropeanData(
-      nationalDetail?.single ?? null,
+    const overlay = getOverlayMetric(selectedOverlayId)
+    const nationalEntry =
+      overlay.source === 'level3'
+        ? (nationalDetail?.level3 ?? null)
+        : (nationalDetail?.single ?? null)
+    const nationalMetric = getOverlayMetricData(
+      nationalEntry,
       selectedYear,
       selectedAgeGroup,
+      selectedOverlayId,
     )
     if (map.getLayer('national-fill')) {
       map.setPaintProperty(
         'national-fill',
         'fill-color',
-        hoverColorExpression(europeanFillColor(nationalMetric?.percentage)),
+        hoverColorExpression(
+          overlayFillColor(
+            nationalMetric?.percentage,
+            selectedOverlayId,
+            colourScale.min,
+            colourScale.max,
+          ),
+        ),
       )
     }
 
@@ -875,13 +928,30 @@ function MapView() {
       const layerId = `${tier}-fill`
       if (!map.getLayer(layerId)) continue
       const nameProp = TILE_SOURCES[tier].nameProp
-      map.setPaintProperty(layerId, 'fill-color', colorExpression(metrics, nameProp))
+      map.setPaintProperty(
+        layerId,
+        'fill-color',
+        colorExpression(metrics, nameProp, selectedOverlayId, colourScale),
+      )
     }
-  }, [metrics, mapReady, nationalDetail, selectedYear, selectedAgeGroup])
+  }, [
+    metrics,
+    mapReady,
+    nationalDetail,
+    selectedYear,
+    selectedAgeGroup,
+    selectedOverlayId,
+    colourScale,
+  ])
 
   const flyToSearch = (hit: SearchHit, zoom: number) => {
     setSelectedArea(hit.name)
-    setShareUrlParams({ slug: hit.slug, year: selectedYear, ageGroup: selectedAgeGroup })
+    setShareUrlParams({
+      slug: hit.slug,
+      year: selectedYear,
+      ageGroup: selectedAgeGroup,
+      overlayId: selectedOverlayId,
+    })
     const map = mapRef.current
     if (!map || !hit.center) return
     map.flyTo({
@@ -918,6 +988,8 @@ function MapView() {
             availableAgeGroups={availableAgeGroups}
             selectedAgeGroup={selectedAgeGroup}
             onAgeGroupChange={setSelectedAgeGroup}
+            selectedOverlayId={selectedOverlayId}
+            onOverlayChange={setSelectedOverlayId}
             showRegionalCouncils={showRegionalCouncils}
             onShowRegionalCouncilsChange={setShowRegionalCouncils}
             showTerritorialAuthorities={showTerritorialAuthorities}
@@ -929,7 +1001,11 @@ function MapView() {
           />
         }
       />
-      <MapLegend />
+      <MapLegend
+        overlayId={selectedOverlayId}
+        scaleMin={colourScale.min}
+        scaleMax={colourScale.max}
+      />
       {loading && <div className="map-overlay-message">Loading map...</div>}
       {detailLoading && !loading && <div className="map-overlay-detail">Loading area...</div>}
       {error && <div className="map-overlay-error">Error: {error}</div>}

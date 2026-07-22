@@ -6,6 +6,8 @@ export interface DataManifest {
   years: string[]
   ageGroups: string[]
   tiers: GeographyTier[]
+  overlayMetrics?: string[]
+  defaultOverlayMetric?: string
   nationalKey: string
   nationalSlug: string
   ethnicities: Record<string, string>
@@ -34,13 +36,23 @@ async function fetchJson<T>(url: string): Promise<T> {
   if (cache.has(url)) return cache.get(url) as T
   if (inflight.has(url)) return inflight.get(url) as Promise<T>
 
-  const promise = fetch(url).then(async (res) => {
-    if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`)
-    const data = (await res.json()) as T
-    cache.set(url, data)
-    inflight.delete(url)
-    return data
-  })
+  const promise = fetch(url)
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`)
+      const contentType = res.headers.get('content-type') ?? ''
+      // Vite falls through missing public assets to index.html (often 200 text/html).
+      if (contentType.includes('text/html')) {
+        throw new Error(
+          `Failed to load ${url}: got HTML instead of JSON (missing asset or stale Vite public cache — restart the dev server after data:prepare)`,
+        )
+      }
+      const data = (await res.json()) as T
+      cache.set(url, data)
+      return data
+    })
+    .finally(() => {
+      inflight.delete(url)
+    })
 
   inflight.set(url, promise)
   return promise
@@ -54,10 +66,12 @@ export async function loadMetrics(
   tier: GeographyTier,
   year: string,
   ageGroup: string,
+  overlayMetricId = 'european',
 ): Promise<Record<string, number>> {
-  const slug = ageGroupSlug(ageGroup)
+  const ageSlug = ageGroupSlug(ageGroup)
+  const metricSlug = overlayMetricId || 'european'
   return fetchJson<Record<string, number>>(
-    assetUrl(`data/prepared/metrics/${tier}/${year}-${slug}.json`),
+    assetUrl(`data/prepared/metrics/${tier}/${year}-${ageSlug}-${metricSlug}.json`),
   )
 }
 

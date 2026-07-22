@@ -65,17 +65,16 @@ export const TA_ZOOM_THRESHOLD = 7
 export const SA2_ZOOM_THRESHOLD = 10
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  European: '#3b82f6',
-  'European/Maori': '#8b5cf6',
-  Maori: '#ef4444',
-  'Pacific Islander': '#f59e0b',
-  Asian: '#10b981',
+  'NZ European': '#3b82f6',
+  'NZ European/Maori': '#8b5cf6',
+  'NZ Maori': '#ef4444',
+  'Pacific Islander': '#10b981',
+  Asian: '#f59e0b',
   'MELAA & Other': '#6b7280',
   'Other Mixed': '#ec4899',
 }
 
 export const LEVEL3_KEY_MAP: Record<string, string> = {
-  'New Zealander': 'New Zealand European',
   'British & Irish': 'British and Irish',
   Dutch: 'Dutch',
   Greek: 'Greek',

@@ -31,10 +31,10 @@ describe('processUnifiedData', () => {
   it('returns ranked categories with percentages', () => {
     const items = processUnifiedData(data, 250, base, 220, '2023')
     expect(items.length).toBe(7)
-    expect(items[0].name).toBe('European')
+    expect(items[0].name).toBe('NZ European')
     expect(items[0].value).toBe(100)
     expect(Number(items[0].percentage)).toBe(40)
-    expect(items.find((item) => item.name === 'European/Maori')?.value).toBe(10)
+    expect(items.find((item) => item.name === 'NZ European/Maori')?.value).toBe(10)
     const otherMixed = items.find((item) => item.name === 'Other Mixed')
     expect(otherMixed?.value).toBe(15)
     expect(otherMixed?.isExpandable).toBe(true)
@@ -49,14 +49,14 @@ describe('processUnifiedData', () => {
 
   it('marks expandable categories', () => {
     const items = processUnifiedData(data, 250, undefined, undefined, '2013')
-    const european = items.find((i) => i.name === 'European')
+    const european = items.find((i) => i.name === 'NZ European')
     expect(european?.isExpandable).toBe(true)
     expect(european?.children?.length).toBeGreaterThan(0)
   })
 
   it('computes change vs 2013', () => {
     const items = processUnifiedData(data, 250, base, 220, '2023')
-    const european = items.find((i) => i.name === 'European')
+    const european = items.find((i) => i.name === 'NZ European')
     expect(european?.changeIcon).toBe('▼')
   })
 })

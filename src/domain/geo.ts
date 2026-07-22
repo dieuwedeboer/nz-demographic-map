@@ -1,5 +1,12 @@
-import type { EthnicityCounts, RegionData, RegionEntry } from './types'
+import type { EthnicityCounts, GeographyTier, RegionData, RegionEntry } from './types'
 import { SA2_ZOOM_THRESHOLD, TA_ZOOM_THRESHOLD } from './types'
+
+/** Friendlier UI labels for residual / abbreviated Stats NZ area names. */
+const AREA_DISPLAY_NAMES: Record<string, string> = {
+  'Total - New Zealand by regional council': 'New Zealand',
+  'Area Outside Territorial Authority': 'Remote Islands',
+  'Area Outside Region': 'Islands Outside Region',
+}
 
 export function normalizeName(name: string): string {
   if (!name) return ''
@@ -7,6 +14,18 @@ export function normalizeName(name: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+}
+
+/**
+ * User-facing area label. Data keys and slugs stay canonical (e.g. Auckland).
+ * Pass the geography tier when known so RC Auckland can show as "Auckland Region".
+ */
+export function displayAreaName(
+  name: string,
+  tier?: GeographyTier | string | null,
+): string {
+  if (name === 'Auckland' && tier === 'rc') return 'Auckland Region'
+  return AREA_DISPLAY_NAMES[name] ?? name
 }
 
 export function buildNameIndex(regionData: RegionData): Map<string, string> {

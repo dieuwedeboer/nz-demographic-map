@@ -36,15 +36,15 @@ describe('overlayFillColor', () => {
 
   it('maps other groups to catalogue accent colours', () => {
     expect(overlayAccentColor('maori')).toBe('#ef4444')
-    expect(overlayAccentColor('asian')).toBe('#10b981')
-    expect(overlayAccentColor('pacific')).toBe('#f59e0b')
+    expect(overlayAccentColor('asian')).toBe('#f59e0b')
+    expect(overlayAccentColor('pacific')).toBe('#10b981')
     expect(overlayAccentColor('melaa')).toBe('#6b7280')
-    expect(overlayAccentColor('chinese')).toBe('#10b981')
+    expect(overlayAccentColor('chinese')).toBe('#f59e0b')
   })
 
   it('darkens accent for level-3 pie carve and callout', () => {
-    expect(darkenHexColor('#10b981', 0.34)).toBe('rgb(11, 122, 85)')
-    expect(overlayDetailAccentColor('chinese')).toBe(darkenHexColor('#10b981', 0.34))
+    expect(darkenHexColor('#f59e0b', 0.34)).toBe('rgb(162, 104, 7)')
+    expect(overlayDetailAccentColor('chinese')).toBe(darkenHexColor('#f59e0b', 0.34))
   })
 
   it('uses white-to-accent monochrome for monochrome groups', () => {

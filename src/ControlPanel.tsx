@@ -59,21 +59,21 @@ function ControlPanel({
     {
       id: 'regional-councils-layer',
       label: 'Regional Councils',
-      description: 'Broad regions',
+      description: '16 regions',
       checked: showRegionalCouncils,
       onChange: onShowRegionalCouncilsChange,
     },
     {
       id: 'territorial-authorities-layer',
       label: 'Territorial Authorities',
-      description: 'Districts and cities',
+      description: '67 city and district councils',
       checked: showTerritorialAuthorities,
       onChange: onShowTerritorialAuthoritiesChange,
     },
     {
       id: 'statistical-areas-layer',
       label: 'Statistical Areas',
-      description: 'Local SA2 areas',
+      description: '2,400 census neighbourhoods (SA2)',
       checked: showSA2,
       onChange: onShowSA2Change,
     },
@@ -122,8 +122,8 @@ function ControlPanel({
         </div>
       </section>
 
-      <section className="control-section" aria-label="Map colour metric">
-        <div className="control-section-title">Map colour</div>
+      <section className="control-section" aria-label="Map colour by ethnicity">
+        <div className="control-section-title">Map colour by ethnicity</div>
         <div
           className={childOptions.length > 0 ? 'control-grid' : 'control-grid control-grid-single'}
         >

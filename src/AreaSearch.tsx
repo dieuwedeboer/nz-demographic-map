@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { normalizeName } from './domain/geo'
+import { displayAreaName, normalizeName } from './domain/geo'
 import type { GeographyTier } from './domain/types'
 import { assetUrl } from './lib/paths'
 
@@ -100,7 +100,7 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
 
   const pick = useCallback(
     (hit: SearchHit) => {
-      setQuery(hit.name)
+      setQuery(displayAreaName(hit.name, hit.tier))
       setOpen(false)
       onSelect(hit, TIER_ZOOM[hit.tier] ?? 10)
     },
@@ -161,7 +161,7 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(hit)}
             >
-              <span className="area-search-name">{hit.name}</span>
+              <span className="area-search-name">{displayAreaName(hit.name, hit.tier)}</span>
               <span className="area-search-tier">{TIER_LABEL[hit.tier] || hit.tier}</span>
             </button>
           ))}

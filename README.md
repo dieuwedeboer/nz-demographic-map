@@ -4,6 +4,8 @@ Interactive map of New Zealand census ethnicity data (2013, 2018, 2023) by regio
 
 Built by [Right Minds NZ](https://rightminds.nz). Data from [Stats NZ](https://www.stats.govt.nz/).
 
+![NZ Demographics Map](public/assets/images/og-image.jpg)
+
 ## Features
 
 - Zoom from regions → districts → neighbourhoods (SA2)

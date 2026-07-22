@@ -1,5 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTheme } from './contexts/ThemeContext'
+import {
+  childrenOfOverlay,
+  type OverlaySelection,
+  supportsIncludeEurMaori,
+  TOP_LEVEL_OVERLAYS,
+} from './domain/overlay'
 import type { AgeGroup } from './domain/types'
 
 interface ControlPanelProps {
@@ -9,6 +15,8 @@ interface ControlPanelProps {
   availableAgeGroups: AgeGroup[]
   selectedAgeGroup: AgeGroup
   onAgeGroupChange: (ageGroup: AgeGroup) => void
+  overlaySelection: OverlaySelection
+  onOverlaySelectionChange: (selection: OverlaySelection) => void
   showRegionalCouncils: boolean
   onShowRegionalCouncilsChange: (show: boolean) => void
   showTerritorialAuthorities: boolean
@@ -26,6 +34,8 @@ function ControlPanel({
   availableAgeGroups,
   selectedAgeGroup,
   onAgeGroupChange,
+  overlaySelection,
+  onOverlaySelectionChange,
   showRegionalCouncils,
   onShowRegionalCouncilsChange,
   showTerritorialAuthorities,
@@ -37,6 +47,14 @@ function ControlPanel({
 }: ControlPanelProps) {
   const { theme, toggleTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
+
+  const childOptions = useMemo(
+    () => childrenOfOverlay(overlaySelection.groupId),
+    [overlaySelection.groupId],
+  )
+  const showIncludeEurMaori = supportsIncludeEurMaori(overlaySelection.groupId)
+  const detailSelectValue = overlaySelection.detailId ?? 'all'
+
   const layerToggles = [
     {
       id: 'regional-councils-layer',
@@ -71,6 +89,7 @@ function ControlPanel({
               <span>Year</span>
               <select
                 id="year-selector"
+                name="year"
                 value={selectedYear}
                 onChange={(e) => onYearChange(e.target.value)}
                 disabled={disabled}
@@ -88,6 +107,7 @@ function ControlPanel({
             <span>Age</span>
             <select
               id="age-group-selector"
+              name="age-group"
               value={selectedAgeGroup}
               onChange={(e) => onAgeGroupChange(e.target.value as AgeGroup)}
               disabled={disabled}
@@ -102,6 +122,90 @@ function ControlPanel({
         </div>
       </section>
 
+      <section className="control-section" aria-label="Map colour metric">
+        <div className="control-section-title">Map colour</div>
+        <div
+          className={childOptions.length > 0 ? 'control-grid' : 'control-grid control-grid-single'}
+        >
+          <label className="field-control" htmlFor="overlay-group-selector">
+            <span>Group</span>
+            <select
+              id="overlay-group-selector"
+              name="overlay-group"
+              value={overlaySelection.groupId}
+              onChange={(e) =>
+                onOverlaySelectionChange({
+                  groupId: e.target.value,
+                  detailId: null,
+                  includeEurMaori: overlaySelection.includeEurMaori,
+                })
+              }
+              disabled={disabled}
+            >
+              {TOP_LEVEL_OVERLAYS.map((metric) => (
+                <option key={metric.id} value={metric.id}>
+                  {metric.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {childOptions.length > 0 && (
+            <label className="field-control" htmlFor="overlay-detail-selector">
+              <span>Detail</span>
+              <select
+                id="overlay-detail-selector"
+                name="overlay-detail"
+                value={detailSelectValue}
+                onChange={(e) =>
+                  onOverlaySelectionChange({
+                    groupId: overlaySelection.groupId,
+                    detailId: e.target.value === 'all' ? null : e.target.value,
+                    includeEurMaori: overlaySelection.includeEurMaori,
+                  })
+                }
+                disabled={disabled}
+              >
+                <option value="all">All</option>
+                {childOptions.map((metric) => (
+                  <option key={metric.id} value={metric.id}>
+                    {metric.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {showIncludeEurMaori ? (
+          <label className="layer-toggle overlay-include-toggle" htmlFor="include-eur-maori">
+            <input
+              id="include-eur-maori"
+              name="include-eur-maori"
+              type="checkbox"
+              checked={overlaySelection.includeEurMaori}
+              onChange={(e) =>
+                onOverlaySelectionChange({
+                  groupId: overlaySelection.groupId,
+                  detailId: overlaySelection.detailId,
+                  includeEurMaori: e.target.checked,
+                })
+              }
+              disabled={disabled}
+            />
+            <span className="toggle-track" aria-hidden="true">
+              <span className="toggle-thumb" />
+            </span>
+            <span className="layer-toggle-copy">
+              <strong>Include European Maori</strong>
+              <small>
+                Add dual European/Maori share to count. This is commonly done in govt reporting.
+              </small>
+            </span>
+          </label>
+        ) : null}
+      </section>
+
       <section className="control-section" aria-label="Map layers">
         <div className="control-section-title">Layers</div>
         <div className="layer-toggle-list">
@@ -109,6 +213,7 @@ function ControlPanel({
             <label key={layer.id} className="layer-toggle" htmlFor={layer.id}>
               <input
                 id={layer.id}
+                name={layer.id}
                 type="checkbox"
                 checked={layer.checked}
                 onChange={(e) => layer.onChange(e.target.checked)}

@@ -1,19 +1,23 @@
 /**
  * Prepare slim static data for progressive loading:
- * - metrics/{tier}/{year}-{age}.json  — choropleth only (KB)
+ * - metrics/{tier}/{year}-{age}.json  — packed choropleth (all overlays)
  * - areas/{slug}.json                 — full detail for one place (~40KB)
  * - national.json                     — NZ totals for default panel
  * - name-index.json                   — normalize → { name, slug, tier, center }
  * - search-index.json                 — compact list for typeahead
  * - manifest.json
+ *
+ * Overlay catalogue: single source at src/domain/overlay-metrics.json
+ * (shared with the app via src/domain/overlay.ts).
  */
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const publicData = join(root, 'public', 'data')
 const outRoot = join(publicData, 'prepared')
+const cataloguePath = join(root, 'src', 'domain', 'overlay-metrics.json')
 
 const AGE_GROUPS = [
   'Total - age',
@@ -24,8 +28,16 @@ const AGE_GROUPS = [
 ]
 
 const YEARS = ['2013', '2018', '2023']
-// Suppress percentages based on too few stated ethnicity responses to be meaningful.
-const MINIMUM_STATED_ETHNICITY_COUNT = 50
+
+const catalogue = JSON.parse(await readFile(cataloguePath, 'utf8'))
+const MINIMUM_STATED_ETHNICITY_COUNT = catalogue.minimumStatedEthnicityCount
+const DEFAULT_OVERLAY_ID = catalogue.defaultOverlayId
+/** id + source + keys from the shared catalogue. */
+const OVERLAY_METRICS = catalogue.metrics.map((metric) => ({
+  id: metric.id,
+  source: metric.source,
+  keys: metric.keys,
+}))
 
 function normalizeName(name) {
   if (!name) return ''
@@ -56,12 +68,21 @@ function lookupRegion(regionData, nameIndex, name) {
   return key ? regionData[key] : null
 }
 
-function europeanPct(ageData) {
+function sumKeys(ageData, keys) {
+  let sum = 0
+  for (const key of keys) {
+    const value = ageData[key]
+    if (typeof value === 'number' && Number.isFinite(value)) sum += value
+  }
+  return sum
+}
+
+function metricPct(ageData, keys) {
   if (!ageData) return null
   const total = ageData['Total stated - ethnicity']
   if (typeof total !== 'number' || total < MINIMUM_STATED_ETHNICITY_COUNT) return null
-  const european = ageData['European only'] || 0
-  return Math.round((european / total) * 1000) / 10
+  const count = sumKeys(ageData, keys)
+  return Math.round((count / total) * 1000) / 10
 }
 
 async function loadJson(path) {
@@ -71,6 +92,20 @@ async function loadJson(path) {
 async function writeJson(path, data) {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, JSON.stringify(data))
+}
+
+/**
+ * Delete children of a directory without removing the directory itself.
+ * Vite's public-file server (sirv) caches directory existence; `rm -rf metrics/`
+ * while the dev server is running makes subsequent metric requests fall through
+ * to index.html (JSON parse errors). Keeping the directory node avoids that.
+ */
+async function emptyDirKeepRoot(dir) {
+  await mkdir(dir, { recursive: true })
+  const entries = await readdir(dir, { withFileTypes: true })
+  await Promise.all(
+    entries.map((entry) => rm(join(dir, entry.name), { recursive: true, force: true })),
+  )
 }
 
 /**
@@ -167,12 +202,12 @@ async function main() {
     loadJson(join(assets, 'statistical-area-2.json')),
   ])
 
-  // Wipe previous prepared output subdirectories (keeps prepared/ root intact
-  // so Vite's sirv cache doesn't lose track of root-level files)
-  for (const sub of ['areas', 'metrics']) {
-    await rm(join(outRoot, sub), { recursive: true, force: true })
-  }
+  // Clear previous prepared output without removing directory nodes (keeps
+  // prepared/, areas/, metrics/ so Vite's sirv cache still serves them).
   await mkdir(outRoot, { recursive: true })
+  for (const sub of ['areas', 'metrics']) {
+    await emptyDirKeepRoot(join(outRoot, sub))
+  }
 
   const singleIndex = buildNameIndex(single)
   const level3Index = buildNameIndex(level3)
@@ -246,17 +281,25 @@ async function main() {
     console.log(`Writing metrics + areas for ${tier} (${namesByTier[tier].length} features)...`)
     for (const year of YEARS) {
       for (const age of AGE_GROUPS) {
-        const metrics = {}
-        for (const name of namesByTier[tier]) {
-          const censusKey = resolveCensusName(name, singleIndex)
-          if (!censusKey) continue
-          const ageData = single[censusKey]?.ethnicityData?.[year]?.[age]
-          const pct = europeanPct(ageData)
-          // Key by map display name so MapLibre match expressions work
-          if (pct !== null) metrics[name] = pct
+        const ageSlug = age === 'Total - age' ? 'all' : age.replace(/\s+/g, '-').toLowerCase()
+        // Packed file: { [metricId]: { [areaName]: pct } } — one fetch per year/age/tier
+        const pack = {}
+        for (const overlay of OVERLAY_METRICS) {
+          const metrics = {}
+          const sourceTable = overlay.source === 'level3' ? level3 : single
+          const sourceIndex = overlay.source === 'level3' ? level3Index : singleIndex
+          for (const name of namesByTier[tier]) {
+            const censusKey =
+              resolveCensusName(name, sourceIndex) || resolveCensusName(name, singleIndex)
+            if (!censusKey) continue
+            const ageData = sourceTable[censusKey]?.ethnicityData?.[year]?.[age]
+            const pct = metricPct(ageData, overlay.keys)
+            // Key by map display name so MapLibre match expressions work
+            if (pct !== null) metrics[name] = pct
+          }
+          pack[overlay.id] = metrics
         }
-        const slug = age === 'Total - age' ? 'all' : age.replace(/\s+/g, '-').toLowerCase()
-        await writeJson(join(outRoot, 'metrics', tier, `${year}-${slug}.json`), metrics)
+        await writeJson(join(outRoot, 'metrics', tier, `${year}-${ageSlug}.json`), pack)
       }
     }
 
@@ -293,6 +336,9 @@ async function main() {
     years: YEARS,
     ageGroups: AGE_GROUPS,
     tiers: ['rc', 'ta', 'sa2'],
+    overlayMetrics: OVERLAY_METRICS.map((m) => m.id),
+    defaultOverlayMetric: DEFAULT_OVERLAY_ID,
+    metricsFormat: 'packed',
     nationalKey: nationalName,
     nationalSlug:
       nameIndexOut[normalizeName(nationalName)]?.slug || 'total-new-zealand-by-regional-council',

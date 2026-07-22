@@ -67,7 +67,11 @@ const OVERLAY_PARENT_TO_PIE_CATEGORY: Record<string, string> = {
   melaa: 'MELAA & Other',
 }
 
-/** Active map-detail sub-group shown as a callout (not carved into the pie). */
+/**
+ * Level-3 map detail for the info panel: carved into the single-response pie
+ * (approximate, capped to parent) and shown as a callout with the true count.
+ * Mixing level-3 multi-response into the single-response pie is intentional.
+ */
 export interface PieDetailHighlight {
   parentCategory: string
   subLabel: string
@@ -75,8 +79,8 @@ export interface PieDetailHighlight {
 }
 
 /**
- * When a level-3 map colour is selected, return the sub-count for a callout
- * under the pie (level-3 multi-response base — not mixed into single-response wedges).
+ * When a level-3 map colour is selected, return the multi-response sub-count
+ * for pie illustration + callout (see PieDetailHighlight).
  */
 export function pieDetailHighlightForOverlay(
   overlayId: string,

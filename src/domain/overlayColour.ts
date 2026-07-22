@@ -62,6 +62,22 @@ export function overlayAccentColor(overlayId: string): string {
   return getOverlayMetric(overlayId).accent
 }
 
+/**
+ * Darker shade of the overlay accent — used for level-3 pie carve and callout
+ * so the detail stands out against the parent category colour.
+ */
+export function overlayDetailAccentColor(overlayId: string, amount = 0.34): string {
+  return darkenHexColor(overlayAccentColor(overlayId), amount)
+}
+
+/** Darken a hex colour toward black by `amount` (0–1). */
+export function darkenHexColor(hex: string, amount = 0.32): string {
+  const channels = parseHexColor(hex)
+  if (!channels) return hex
+  const factor = Math.max(0, Math.min(1, 1 - amount))
+  return `rgb(${channels.map((channel) => Math.round(channel * factor)).join(', ')})`
+}
+
 /** Colour domain for choropleth + legend (percentages). */
 export interface ColourScaleDomain {
   min: number

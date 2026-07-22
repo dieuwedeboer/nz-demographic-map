@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  darkenHexColor,
   europeanFillColor,
   europeanMaoriCombinedFillColor,
   legendTickValues,
@@ -8,6 +9,7 @@ import {
   niceScaleDomain,
   normalizeToScale,
   overlayAccentColor,
+  overlayDetailAccentColor,
   overlayFillColor,
   overlayScaleDomain,
 } from './overlayColour'
@@ -38,6 +40,11 @@ describe('overlayFillColor', () => {
     expect(overlayAccentColor('pacific')).toBe('#f59e0b')
     expect(overlayAccentColor('melaa')).toBe('#6b7280')
     expect(overlayAccentColor('chinese')).toBe('#10b981')
+  })
+
+  it('darkens accent for level-3 pie carve and callout', () => {
+    expect(darkenHexColor('#10b981', 0.34)).toBe('rgb(11, 122, 85)')
+    expect(overlayDetailAccentColor('chinese')).toBe(darkenHexColor('#10b981', 0.34))
   })
 
   it('uses white-to-accent monochrome for monochrome groups', () => {

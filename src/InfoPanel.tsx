@@ -12,7 +12,7 @@ import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
 import { type PieDetailHighlight, pieDetailHighlightForOverlay } from './domain/overlay'
-import { overlayAccentColor } from './domain/overlayColour'
+import { overlayDetailAccentColor } from './domain/overlayColour'
 import {
   AGE_GROUPS,
   type AgeGroup,
@@ -29,6 +29,8 @@ interface PieSlice {
   color: string
   startAngle: number
   endAngle: number
+  /** Map-detail sub-group carved from a parent category for illustration. */
+  isDetailHighlight?: boolean
 }
 
 type InfoPanelTab = 'details' | 'controls'
@@ -63,27 +65,69 @@ async function copyShareUrl(url: string) {
   }
 }
 
-function buildPieSlices(items: DisplayItem[]): PieSlice[] {
+/**
+ * Build pie wedges from single-response totals. When a level-3 map detail is
+ * active, intentionally carve its multi-response count out of the matching
+ * parent wedge for illustration (capped so the parent never goes negative).
+ * Callout text keeps the uncapped level-3 count; slight pie vs map mismatch is OK.
+ */
+function buildPieSlices(
+  items: DisplayItem[],
+  detail: PieDetailHighlight | null,
+  detailColor: string,
+): PieSlice[] {
   const positive = items.filter((i) => i.value > 0)
   const sum = positive.reduce((s, i) => s + i.value, 0)
   if (sum <= 0) return []
 
+  const parts: Array<{
+    name: string
+    value: number
+    color: string
+    isDetailHighlight?: boolean
+  }> = []
+
+  for (const item of positive) {
+    const baseColor = CATEGORY_COLORS[item.name] || '#888'
+    const isParent =
+      detail && item.name === detail.parentCategory && detail.subValue > 0 && item.value > 0
+
+    if (isParent && detail) {
+      const subValue = Math.min(detail.subValue, item.value)
+      const remainder = item.value - subValue
+      if (subValue > 0) {
+        parts.push({
+          name: detail.subLabel,
+          value: subValue,
+          color: detailColor,
+          isDetailHighlight: true,
+        })
+      }
+      if (remainder > 0) {
+        parts.push({ name: item.name, value: remainder, color: baseColor })
+      }
+    } else {
+      parts.push({ name: item.name, value: item.value, color: baseColor })
+    }
+  }
+
   let angle = 0
-  return positive.map((item) => {
-    const sweep = (item.value / sum) * 360
+  return parts.map((part) => {
+    const sweep = (part.value / sum) * 360
     const slice: PieSlice = {
-      name: item.name,
-      value: item.value,
-      color: CATEGORY_COLORS[item.name] || '#888',
+      name: part.name,
+      value: part.value,
+      color: part.color,
       startAngle: angle,
       endAngle: angle + sweep,
+      isDetailHighlight: part.isDetailHighlight,
     }
     angle += sweep
     return slice
   })
 }
 
-/** Level-3 map detail as a callout — separate statistical base from single-response pie. */
+/** Level-3 map detail callout (true multi-response count; pie may approximate). */
 function MapDetailCallout({
   detail,
   totalStated,
@@ -98,22 +142,38 @@ function MapDetailCallout({
     <div className="map-detail-callout" role="note">
       <span
         className="pie-swatch"
-        style={{ background: overlayAccentColor(overlayId) }}
+        style={{ background: overlayDetailAccentColor(overlayId) }}
         aria-hidden="true"
       />
       <div className="map-detail-callout-copy">
         <strong>{detail.subLabel}</strong>
         <span>
-          {detail.subValue.toLocaleString()} people ({pct}% of stated) — level-3 multi-response
-          count within {detail.parentCategory}; not a slice of the pie above.
+          {detail.subValue.toLocaleString()} people ({pct}% of stated) within {detail.parentCategory}.
+          Level-3 multi-response; pie slice is approximate.
         </span>
       </div>
     </div>
   )
 }
 
-function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean }) {
-  const slices = useMemo(() => buildPieSlices(items), [items])
+function EthnicityPie({
+  items,
+  isDark,
+  detail,
+  totalStated,
+  overlayId,
+}: {
+  items: DisplayItem[]
+  isDark: boolean
+  detail: PieDetailHighlight | null
+  totalStated: number
+  overlayId: string
+}) {
+  const detailColor = detail ? overlayDetailAccentColor(overlayId) : '#888'
+  const slices = useMemo(
+    () => buildPieSlices(items, detail, detailColor),
+    [items, detail, detailColor],
+  )
 
   if (slices.length === 0) return null
 
@@ -132,7 +192,10 @@ function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean
       >
         {slices.map((slice) => {
           const key = `${slice.name}-${slice.startAngle}`
-          const title = `${slice.name}: ${slice.value.toLocaleString()}`
+          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : '0.0'
+          const title = slice.isDetailHighlight
+            ? `${slice.name}: ${slice.value.toLocaleString()} (${ofTotal}% of total)`
+            : `${slice.name}: ${slice.value.toLocaleString()}`
           if (slice.endAngle - slice.startAngle >= 359.99) {
             return (
               <circle key={key} cx={cx} cy={cy} r={r} fill={slice.color}>
@@ -154,12 +217,23 @@ function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean
         })}
       </svg>
       <div className="pie-legend">
-        {slices.map((slice) => (
-          <div key={`${slice.name}-${slice.startAngle}`} className="pie-legend-row">
-            <span className="pie-swatch" style={{ background: slice.color }} />
-            <span className="pie-legend-label">{slice.name}</span>
-          </div>
-        ))}
+        {slices.map((slice) => {
+          const ofTotal = totalStated > 0 ? ((slice.value / totalStated) * 100).toFixed(1) : null
+          return (
+            <div
+              key={`${slice.name}-${slice.startAngle}`}
+              className={`pie-legend-row${slice.isDetailHighlight ? ' pie-legend-detail' : ''}`}
+            >
+              <span className="pie-swatch" style={{ background: slice.color }} />
+              <span className="pie-legend-label">
+                {slice.name}
+                {slice.isDetailHighlight && ofTotal != null ? (
+                  <span className="pie-legend-pct"> {ofTotal}%</span>
+                ) : null}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -540,7 +614,13 @@ function InfoPanel({ controls }: InfoPanelProps) {
       </div>
       <p className="info-subtitle">Single/combination responses</p>
 
-      <EthnicityPie items={items} isDark={isDark} />
+      <EthnicityPie
+        items={items}
+        isDark={isDark}
+        detail={pieDetail}
+        totalStated={total}
+        overlayId={selectedOverlayId}
+      />
       {pieDetail ? (
         <MapDetailCallout detail={pieDetail} totalStated={total} overlayId={selectedOverlayId} />
       ) : null}

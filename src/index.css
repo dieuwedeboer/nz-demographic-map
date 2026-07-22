@@ -937,6 +937,15 @@ body {
   white-space: nowrap;
 }
 
+.pie-legend-detail .pie-legend-label {
+  font-weight: 600;
+}
+
+.pie-legend-pct {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .map-detail-callout {
   display: flex;
   align-items: flex-start;

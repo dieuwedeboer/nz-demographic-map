@@ -28,19 +28,6 @@ export function displayAreaName(
   return AREA_DISPLAY_NAMES[name] ?? name
 }
 
-/** Official Stats NZ name when the UI label differs; for tooltips. */
-export function areaNameOfficialNote(
-  name: string,
-  tier?: GeographyTier | string | null,
-): string | null {
-  const display = displayAreaName(name, tier)
-  if (display === name) return null
-  if (name === 'Auckland' && tier === 'rc') {
-    return 'Stats NZ regional council (listed as Auckland in data)'
-  }
-  return name
-}
-
 export function buildNameIndex(regionData: RegionData): Map<string, string> {
   const index = new Map<string, string>()
   for (const key of Object.keys(regionData)) {

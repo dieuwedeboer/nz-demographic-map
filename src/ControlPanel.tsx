@@ -122,8 +122,8 @@ function ControlPanel({
         </div>
       </section>
 
-      <section className="control-section" aria-label="Map colour metric">
-        <div className="control-section-title">Map colour</div>
+      <section className="control-section" aria-label="Map colour by ethnicity">
+        <div className="control-section-title">Map colour by ethnicity</div>
         <div
           className={childOptions.length > 0 ? 'control-grid' : 'control-grid control-grid-single'}
         >

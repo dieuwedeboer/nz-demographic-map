@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   ageGroupSlug,
-  areaNameOfficialNote,
   buildNameIndex,
   displayAreaName,
   findRegionData,
@@ -49,16 +48,6 @@ describe('displayAreaName', () => {
 
   it('leaves other names unchanged', () => {
     expect(displayAreaName('Northland Region', 'rc')).toBe('Northland Region')
-  })
-})
-
-describe('areaNameOfficialNote', () => {
-  it('returns Stats name when display differs', () => {
-    expect(areaNameOfficialNote('Area Outside Territorial Authority')).toBe(
-      'Area Outside Territorial Authority',
-    )
-    expect(areaNameOfficialNote('Auckland', 'rc')).toMatch(/Auckland/)
-    expect(areaNameOfficialNote('Auckland', 'ta')).toBeNull()
   })
 })
 

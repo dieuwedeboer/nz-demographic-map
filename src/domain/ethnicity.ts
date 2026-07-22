@@ -18,10 +18,10 @@ const OTHER_MIXED_BREAKDOWN = [
 
 const CATEGORIES: CategoryDef[] = [
   {
-    name: 'European',
+    name: 'NZ European',
     key: 'European only',
     children: [
-      'New Zealander',
+      'New Zealand European',
       'British & Irish',
       'Dutch',
       'Greek',
@@ -33,8 +33,8 @@ const CATEGORIES: CategoryDef[] = [
       'Other European',
     ],
   },
-  { name: 'European/Maori', key: 'European/Māori', children: [] },
-  { name: 'Maori', key: 'Māori only', children: [] },
+  { name: 'NZ European/Maori', key: 'European/Māori', children: [] },
+  { name: 'NZ Maori', key: 'Māori only', children: [] },
   {
     name: 'Pacific Islander',
     key: 'Pacific Peoples only',

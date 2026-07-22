@@ -161,9 +161,7 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(hit)}
             >
-              <span className="area-search-name" title={hit.name}>
-                {displayAreaName(hit.name, hit.tier)}
-              </span>
+              <span className="area-search-name">{displayAreaName(hit.name, hit.tier)}</span>
               <span className="area-search-tier">{TIER_LABEL[hit.tier] || hit.tier}</span>
             </button>
           ))}

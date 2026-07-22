@@ -11,7 +11,7 @@ import {
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
-import { areaNameOfficialNote, displayAreaName } from './domain/geo'
+import { displayAreaName } from './domain/geo'
 import { type PieDetailHighlight, pieDetailHighlightForOverlay } from './domain/overlay'
 import { overlayDetailAccentColor } from './domain/overlayColour'
 import {
@@ -268,7 +268,7 @@ function AgeBreakdown({
 
   return (
     <div className="age-breakdown">
-      <div className="age-breakdown-title">Age groups (European % of stated)</div>
+      <div className="age-breakdown-title">Age groups (NZ European % of stated)</div>
       {rows.map((row) => (
         <div key={row.ag} className="age-bar-row">
           <span className="age-bar-label">
@@ -304,7 +304,6 @@ function InfoPanel({ controls }: InfoPanelProps) {
     nameIndex,
   } = useData()
   const areaLabel = displayAreaName(selectedArea, selectedTier)
-  const areaOfficialNote = areaNameOfficialNote(selectedArea, selectedTier)
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState(() => isMobilePanelViewport())
@@ -385,7 +384,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
   const heading = (
     <>
       <div className="info-title-row">
-        <h4 title={areaOfficialNote ?? undefined}>{areaLabel}</h4>
+        <h4>{areaLabel}</h4>
       </div>
       {shareUrl && (
         <button
@@ -652,29 +651,37 @@ function InfoPanel({ controls }: InfoPanelProps) {
               {item.changeIcon}
             </span>
           </div>
-          {item.isExpandable &&
-            expandedCategories.has(item.name) &&
-            (
-              item.breakdown ??
-              (item.children ?? []).map((childName) => ({
-                name: childName,
-                value: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
-              }))
-            )
-              .sort((a, b) => b.value - a.value)
-              .map((child) => {
-                const childPct = total > 0 ? ((child.value / total) * 100).toFixed(1) : '0.0'
-                return (
-                  <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
-                    <span className="info-label child">
-                      <span className="expand-icon-placeholder" />
-                      <span>{child.name}</span>
-                    </span>
-                    <span className="info-value">{child.value.toLocaleString()}</span>
-                    <span className="info-pct">({childPct}%)</span>
-                  </div>
-                )
-              })}
+          {item.isExpandable && expandedCategories.has(item.name) && (
+            <>
+              {(
+                item.breakdown ??
+                (item.children ?? []).map((childName) => ({
+                  name: childName,
+                  value: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
+                }))
+              )
+                .sort((a, b) => b.value - a.value)
+                .map((child) => {
+                  const childPct = total > 0 ? ((child.value / total) * 100).toFixed(1) : '0.0'
+                  return (
+                    <div key={`${item.name}-child-${child.name}`} className="info-row depth-1">
+                      <span className="info-label child">
+                        <span className="expand-icon-placeholder" />
+                        <span>{child.name}</span>
+                      </span>
+                      <span className="info-value">{child.value.toLocaleString()}</span>
+                      <span className="info-pct">({childPct}%)</span>
+                    </div>
+                  )
+                })}
+              <a href="#ethnicity-method-note" className="info-row depth-1 info-expand-footnote">
+                <span className="info-label child">
+                  <span className="expand-icon-placeholder" />
+                  <span>Totals may add up to over 100%*</span>
+                </span>
+              </a>
+            </>
+          )}
         </div>
       ))}
 
@@ -682,6 +689,12 @@ function InfoPanel({ controls }: InfoPanelProps) {
         <span>Total stated:</span>
         <span>{total.toLocaleString()}</span>
       </div>
+
+      <p id="ethnicity-method-note" className="info-method-note">
+        * Detailed total ethnicity responses are multi-select and self-identified, so can sum to
+        more than the group total. Respondents who selected multiple ethnicities are counted in each
+        group. This is a limitation of the Stats NZ dataset.
+      </p>
     </>,
   )
 }

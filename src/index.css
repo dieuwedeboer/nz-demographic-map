@@ -899,6 +899,33 @@ body {
   color: var(--text-primary);
 }
 
+.info-expand-footnote {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  cursor: pointer;
+}
+
+.info-expand-footnote:hover,
+.info-expand-footnote:focus-visible {
+  color: var(--accent-strong);
+}
+
+.info-method-note {
+  margin: 12px 0 0;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  scroll-margin-top: 12px;
+}
+
 .pie-wrap {
   display: flex;
   align-items: center;
